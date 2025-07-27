@@ -238,12 +238,20 @@
   cursor: not-allowed;
 }
 
-.success-section {
+.extraction-result {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 40px;
   margin-bottom: 60px;
   text-align: center;
+}
+
+.extraction-result h3 {
+  margin: 0 0 30px 0;
+  font-size: 1.2rem;
+  font-weight: 300;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
 .file-info h3 {
@@ -275,47 +283,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.download-section {
-  margin-top: 30px;
-}
-
-.download-link {
-  display: inline-block;
-  padding: 16px 48px;
-  background: transparent;
-  color: #ffffff;
-  text-decoration: none;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  font-weight: 400;
-  font-size: 11px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.download-link::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  transition: left 0.3s ease;
-}
-
-.download-link:hover::before {
-  left: 100%;
-}
-
-.download-link:hover {
-  border-color: rgba(255, 255, 255, 0.6);
-  transform: translateY(-1px);
-}
-
-.stem-separation-section {
+.stems-section {
   margin-top: 50px;
   padding: 40px;
   background: rgba(255, 255, 255, 0.01);
@@ -323,65 +291,12 @@
   text-align: center;
 }
 
-.stem-separation-section h4 {
-  margin: 0 0 16px 0;
+.stems-section h4 {
+  margin: 0 0 30px 0;
   font-size: 1rem;
   font-weight: 300;
   letter-spacing: 3px;
   text-transform: uppercase;
-}
-
-.stem-separation-section p {
-  margin: 0 0 30px 0;
-  opacity: 0.6;
-  font-size: 0.9rem;
-  font-weight: 300;
-  line-height: 1.6;
-  white-space: pre-line;
-}
-
-.stems-btn {
-  padding: 20px 60px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: transparent;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 3px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  text-transform: uppercase;
-  position: relative;
-  overflow: hidden;
-}
-
-.stems-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.1),
-    transparent
-  );
-  transition: left 0.5s ease;
-}
-
-.stems-btn:hover:not(:disabled)::before {
-  left: 100%;
-}
-
-.stems-btn:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.stems-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .stem-progress {
@@ -448,66 +363,6 @@
   font-weight: 300;
 }
 
-.music-analysis {
-  background: rgba(255, 255, 255, 0.01);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 30px;
-  margin-bottom: 40px;
-}
-
-.music-analysis h4 {
-  margin: 0 0 24px 0;
-  font-size: 0.9rem;
-  font-weight: 300;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-}
-
-.analysis-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
-}
-
-.analysis-item {
-  background: rgba(255, 255, 255, 0.01);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 24px;
-  text-align: center;
-  transition: all 0.3s ease;
-}
-
-.analysis-item:hover {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.analysis-label {
-  display: block;
-  font-weight: 300;
-  font-size: 0.75rem;
-  letter-spacing: 2px;
-  margin-bottom: 12px;
-  opacity: 0.6;
-  text-transform: uppercase;
-}
-
-.analysis-value {
-  display: block;
-  font-size: 1.2rem;
-  font-weight: 300;
-  line-height: 1.3;
-}
-
-.confidence {
-  display: block;
-  font-size: 0.7rem;
-  opacity: 0.4;
-  font-weight: 300;
-  margin-top: 8px;
-  letter-spacing: 1px;
-}
-
 .stems-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -543,7 +398,6 @@
 .stem-controls {
   display: flex;
   flex-direction: column;
-  gap: 20px;
 }
 
 .stem-player {
@@ -552,41 +406,6 @@
   outline: none;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.stem-download-link {
-  display: inline-block;
-  padding: 12px 32px;
-  background: transparent;
-  color: #ffffff;
-  text-decoration: none;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  font-weight: 300;
-  font-size: 0.7rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.stem-download-link::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  transition: left 0.3s ease;
-}
-
-.stem-download-link:hover::before {
-  left: 100%;
-}
-
-.stem-download-link:hover {
-  border-color: rgba(255, 255, 255, 0.4);
 }
 
 /* Mobile responsive */
@@ -632,11 +451,6 @@
   }
 
   .stems-grid {
-    grid-template-columns: 1fr;
-    gap: 15px;
-  }
-
-  .analysis-grid {
     grid-template-columns: 1fr;
     gap: 15px;
   }
@@ -852,19 +666,16 @@
 }
 
 .saved-original,
-.saved-music-analysis,
 .saved-stems {
   margin-bottom: 40px;
 }
 
 .saved-original:last-child,
-.saved-music-analysis:last-child,
 .saved-stems:last-child {
   margin-bottom: 0;
 }
 
 .saved-original h4,
-.saved-music-analysis h4,
 .saved-stems h4 {
   margin: 30px 0 20px 0;
   font-size: 0.9rem;
@@ -877,7 +688,6 @@
 .saved-audio-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   align-items: center;
 }
 
@@ -888,51 +698,6 @@
   outline: none;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.saved-download-link,
-.saved-stem-download-link {
-  display: inline-block;
-  padding: 12px 32px;
-  background: transparent;
-  color: #ffffff;
-  text-decoration: none;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  font-weight: 300;
-  font-size: 0.7rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.saved-download-link::before,
-.saved-stem-download-link::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  transition: left 0.3s ease;
-}
-
-.saved-download-link:hover::before,
-.saved-stem-download-link:hover::before {
-  left: 100%;
-}
-
-.saved-download-link:hover,
-.saved-stem-download-link:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.saved-music-analysis {
-  background: rgba(255, 255, 255, 0.01);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 25px;
 }
 
 .saved-stems-grid {
@@ -966,7 +731,6 @@
 .saved-stem-controls {
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
 /* Mobile responsive for saved view */
@@ -1004,11 +768,6 @@
   }
 
   .saved-stems-grid {
-    grid-template-columns: 1fr;
-    gap: 15px;
-  }
-
-  .analysis-grid {
     grid-template-columns: 1fr;
     gap: 15px;
   }

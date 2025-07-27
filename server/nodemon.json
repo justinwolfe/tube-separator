@@ -1,0 +1,5 @@
+{
+  "ignore": ["downloads/**", "metadata/**", "*.mp3", "logs/**"],
+  "ext": "js,mjs",
+  "watch": ["."]
+}

@@ -9,9 +9,8 @@ function App() {
   const [downloading, setDownloading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [downloadSuccess, setDownloadSuccess] = useState(null);
+  const [extractionResult, setExtractionResult] = useState(null);
   const [separatingStems, setSeparatingStems] = useState(false);
-  const [stemsResult, setStemsResult] = useState(null);
   const [savedFiles, setSavedFiles] = useState([]);
   const [savedFilesLoading, setSavedFilesLoading] = useState(false);
 
@@ -56,34 +55,75 @@ function App() {
 
   const handleDownload = async (format = 'best') => {
     setDownloading(true);
-    setError('');
-    setDownloadSuccess(null);
-    setStemsResult(null);
-
-    try {
-      const response = await axios.post('/api/download', { url, format });
-      setDownloadSuccess(response.data);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Download failed');
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  const handleSeparateStems = async () => {
-    if (!downloadSuccess?.filename) return;
-
     setSeparatingStems(true);
     setError('');
-    setStemsResult(null);
+    setExtractionResult(null);
 
     try {
-      const response = await axios.post('/api/separate-stems', {
-        filename: downloadSuccess.filename,
+      // First download the audio
+      const downloadResponse = await axios.post('/api/download', {
+        url,
+        format,
       });
-      setStemsResult(response.data);
+      const downloadData = downloadResponse.data;
+
+      // Update extraction result with initial download
+      setExtractionResult({
+        ...downloadData,
+        stems: [],
+        processingStems: true,
+      });
+
+      setDownloading(false);
+
+      // If stem separation is available, automatically start it
+      if (downloadData.canSeparateStems) {
+        try {
+          const stemsResponse = await axios.post(
+            '/api/separate-stems',
+            {
+              filename: downloadData.filename,
+            },
+            {
+              timeout: 300000, // 5 minutes timeout
+            }
+          );
+
+          // Update with stems data
+          setExtractionResult((prev) => ({
+            ...prev,
+            stems: stemsResponse.data.stems,
+            processingStems: false,
+          }));
+        } catch (stemsErr) {
+          console.error('Stem separation error:', stemsErr);
+          let errorMessage =
+            'Audio downloaded successfully, but stem separation failed';
+
+          if (stemsErr.code === 'ECONNABORTED') {
+            errorMessage +=
+              ': Request timed out. The server may be processing your request.';
+          } else if (stemsErr.response?.data?.error) {
+            errorMessage += ': ' + stemsErr.response.data.error;
+          } else {
+            errorMessage += ': ' + stemsErr.message;
+          }
+
+          setError(errorMessage);
+          setExtractionResult((prev) => ({
+            ...prev,
+            processingStems: false,
+          }));
+        }
+      } else {
+        setExtractionResult((prev) => ({
+          ...prev,
+          processingStems: false,
+        }));
+      }
     } catch (err) {
-      setError(err.response?.data?.error || 'Stem separation failed');
+      setError(err.response?.data?.error || 'Download failed');
+      setDownloading(false);
     } finally {
       setSeparatingStems(false);
     }
@@ -115,7 +155,7 @@ function App() {
       <div className="container">
         <header className="header">
           <h1>SAMPLER</h1>
-          <p>Extract • Isolate • Transform</p>
+          <p>Download • Isolate • Transform</p>
         </header>
 
         {/* Tab Navigation */}
@@ -124,7 +164,7 @@ function App() {
             className={`tab-button ${activeTab === 'main' ? 'active' : ''}`}
             onClick={() => handleTabChange('main')}
           >
-            EXTRACT
+            DOWNLOAD
           </button>
           <button
             className={`tab-button ${activeTab === 'saved' ? 'active' : ''}`}
@@ -144,11 +184,9 @@ function App() {
             downloading={downloading}
             separatingStems={separatingStems}
             error={error}
-            downloadSuccess={downloadSuccess}
-            stemsResult={stemsResult}
+            extractionResult={extractionResult}
             handleGetInfo={handleGetInfo}
             handleDownload={handleDownload}
-            handleSeparateStems={handleSeparateStems}
             formatDuration={formatDuration}
             getStemDisplayName={getStemDisplayName}
           />
@@ -174,11 +212,9 @@ function MainView({
   downloading,
   separatingStems,
   error,
-  downloadSuccess,
-  stemsResult,
+  extractionResult,
   handleGetInfo,
   handleDownload,
-  handleSeparateStems,
   formatDuration,
   getStemDisplayName,
 }) {
@@ -199,7 +235,7 @@ function MainView({
             disabled={loading || downloading || separatingStems}
             className="action-btn"
           >
-            {loading ? 'ANALYZING' : 'ANALYZE'}
+            {loading ? 'FINDING' : 'FIND'}
           </button>
         </div>
       </div>
@@ -229,17 +265,17 @@ function MainView({
               disabled={downloading || separatingStems}
               className="download-btn"
             >
-              {downloading ? 'EXTRACTING...' : 'EXTRACT AUDIO'}
+              {downloading ? 'DOWNLOADING...' : 'DOWNLOAD AUDIO'}
             </button>
           </div>
         </div>
       )}
 
-      {downloadSuccess && (
-        <div className="success-section">
+      {extractionResult && (
+        <div className="extraction-result">
+          <h3>DOWNLOADED AUDIO</h3>
           <div className="file-info">
-            <h3>EXTRACTION COMPLETE</h3>
-            <p className="filename">{downloadSuccess.filename}</p>
+            <p className="filename">{extractionResult.filename}</p>
           </div>
 
           <div className="player-section">
@@ -247,122 +283,45 @@ function MainView({
               controls
               preload="metadata"
               className="audio-player"
-              src={downloadSuccess.streamUrl}
+              src={extractionResult.streamUrl}
             >
               Your browser does not support the audio element.
             </audio>
           </div>
 
-          <div className="download-section">
-            <a
-              href={downloadSuccess.downloadUrl}
-              download
-              className="download-link"
-            >
-              DOWNLOAD
-            </a>
-          </div>
-
-          {downloadSuccess.canSeparateStems && (
-            <div className="stem-separation-section">
-              <h4>STEM ISOLATION</h4>
-              <p>
-                Separate audio into individual components:\nvocals • drums •
-                bass • melodies
-              </p>
-              <button
-                onClick={handleSeparateStems}
-                disabled={separatingStems}
-                className="stems-btn"
-              >
-                {separatingStems ? 'ISOLATING...' : 'ISOLATE STEMS'}
-              </button>
-              {separatingStems && (
-                <div className="stem-progress">
-                  <div className="progress-bar">
-                    <div className="progress-fill"></div>
-                  </div>
-                  <p>Processing with AI... This may take 30-60 seconds</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {stemsResult && (
-        <div className="stems-result">
-          <h3>ISOLATION COMPLETE</h3>
-          <p>{stemsResult.stems.length} stems extracted</p>
-
-          {stemsResult.musicAnalysis && (
-            <div className="music-analysis">
-              <h4>MUSICAL ANALYSIS</h4>
-              <div className="analysis-grid">
-                {stemsResult.musicAnalysis.tempo && (
-                  <div className="analysis-item">
-                    <span className="analysis-label">TEMPO</span>
-                    <span className="analysis-value">
-                      {stemsResult.musicAnalysis.tempo} BPM
-                      {stemsResult.musicAnalysis.tempoConfidence && (
-                        <span className="confidence">
-                          {Math.round(
-                            stemsResult.musicAnalysis.tempoConfidence * 100
-                          )}
-                          % confidence
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                )}
-                {stemsResult.musicAnalysis.key && (
-                  <div className="analysis-item">
-                    <span className="analysis-label">KEY</span>
-                    <span className="analysis-value">
-                      {stemsResult.musicAnalysis.key}
-                      {stemsResult.musicAnalysis.keyConfidence && (
-                        <span className="confidence">
-                          {Math.round(
-                            stemsResult.musicAnalysis.keyConfidence * 100
-                          )}
-                          % confidence
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                )}
+          {extractionResult.processingStems && (
+            <div className="stem-progress">
+              <div className="progress-bar">
+                <div className="progress-fill"></div>
               </div>
+              <p>Processing with AI... This may take 30-60 seconds</p>
             </div>
           )}
 
-          <div className="stems-grid">
-            {stemsResult.stems.map((stem, index) => (
-              <div key={index} className="stem-item">
-                <div className="stem-header">
-                  <h4>{getStemDisplayName(stem.type).toUpperCase()}</h4>
-                </div>
-
-                <div className="stem-controls">
-                  <audio
-                    controls
-                    preload="metadata"
-                    className="stem-player"
-                    src={stem.streamUrl}
-                  >
-                    Your browser does not support the audio element.
-                  </audio>
-
-                  <a
-                    href={stem.downloadUrl}
-                    download
-                    className="stem-download-link"
-                  >
-                    DOWNLOAD
-                  </a>
-                </div>
+          {extractionResult.stems && extractionResult.stems.length > 0 && (
+            <div className="stems-section">
+              <h4>ISOLATED STEMS</h4>
+              <div className="stems-grid">
+                {extractionResult.stems.map((stem, index) => (
+                  <div key={index} className="stem-item">
+                    <div className="stem-header">
+                      <h5>{getStemDisplayName(stem.type).toUpperCase()}</h5>
+                    </div>
+                    <div className="stem-controls">
+                      <audio
+                        controls
+                        preload="metadata"
+                        className="stem-player"
+                        src={stem.streamUrl}
+                      >
+                        Your browser does not support the audio element.
+                      </audio>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </>
@@ -389,7 +348,7 @@ function SavedView({
       <div className="saved-empty">
         <div className="empty-message">
           <h3>No saved files yet</h3>
-          <p>Extract and isolate audio tracks to see them here</p>
+          <p>Download and isolate audio tracks to see them here</p>
         </div>
       </div>
     );
@@ -481,56 +440,8 @@ function SavedFileItem({ fileGroup, formatDuration, getStemDisplayName }) {
               >
                 Your browser does not support the audio element.
               </audio>
-              <a
-                href={original.downloadUrl}
-                download
-                className="saved-download-link"
-              >
-                DOWNLOAD
-              </a>
             </div>
           </div>
-
-          {/* Musical Analysis */}
-          {metadata?.musicAnalysis && (
-            <div className="saved-music-analysis">
-              <h4>MUSICAL ANALYSIS</h4>
-              <div className="analysis-grid">
-                {metadata.musicAnalysis.tempo && (
-                  <div className="analysis-item">
-                    <span className="analysis-label">TEMPO</span>
-                    <span className="analysis-value">
-                      {metadata.musicAnalysis.tempo} BPM
-                      {metadata.musicAnalysis.tempoConfidence && (
-                        <span className="confidence">
-                          {Math.round(
-                            metadata.musicAnalysis.tempoConfidence * 100
-                          )}
-                          % confidence
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                )}
-                {metadata.musicAnalysis.key && (
-                  <div className="analysis-item">
-                    <span className="analysis-label">KEY</span>
-                    <span className="analysis-value">
-                      {metadata.musicAnalysis.key}
-                      {metadata.musicAnalysis.keyConfidence && (
-                        <span className="confidence">
-                          {Math.round(
-                            metadata.musicAnalysis.keyConfidence * 100
-                          )}
-                          % confidence
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Stems */}
           {stems.length > 0 && (
@@ -551,13 +462,6 @@ function SavedFileItem({ fileGroup, formatDuration, getStemDisplayName }) {
                       >
                         Your browser does not support the audio element.
                       </audio>
-                      <a
-                        href={stem.downloadUrl}
-                        download
-                        className="saved-stem-download-link"
-                      >
-                        DOWNLOAD
-                      </a>
                     </div>
                   </div>
                 ))}

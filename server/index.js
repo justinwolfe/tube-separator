@@ -39,7 +39,10 @@ if (!fs.existsSync(metadataDir)) {
 function saveMetadata(filename, data) {
   try {
     const metadataFile = path.join(metadataDir, `${filename}.json`);
-    fs.writeFileSync(metadataFile, JSON.stringify(data, null, 2));
+    // Use atomic write to prevent partial writes that might trigger nodemon
+    const tempFile = metadataFile + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2));
+    fs.renameSync(tempFile, metadataFile);
   } catch (error) {
     console.error('Error saving metadata:', error);
   }
@@ -203,75 +206,6 @@ async function downloadStem(assetId, outputPath) {
   }
 }
 
-async function extractTempoAndKey(assetId) {
-  try {
-    // Get detailed asset information that includes musical analysis
-    const response = await axios.get(`${FADR_API_URL}/assets/${assetId}`, {
-      headers: fadrApiHeaders,
-    });
-
-    const asset = response.data.asset;
-
-    const musicData = {
-      tempo: null,
-      key: null,
-      keyConfidence: null,
-      tempoConfidence: null,
-    };
-
-    // Extract tempo and key from metaData if available
-    if (asset.metaData) {
-      if (asset.metaData.bpm !== undefined) {
-        musicData.tempo = asset.metaData.bpm;
-      }
-      if (asset.metaData.tempo !== undefined) {
-        musicData.tempo = asset.metaData.tempo;
-      }
-      if (asset.metaData.key !== undefined) {
-        musicData.key = asset.metaData.key;
-      }
-      if (asset.metaData.keyConfidence !== undefined) {
-        musicData.keyConfidence = asset.metaData.keyConfidence;
-      }
-      if (asset.metaData.tempoConfidence !== undefined) {
-        musicData.tempoConfidence = asset.metaData.tempoConfidence;
-      }
-    }
-
-    // Check if the completed task has analysis data
-    if (asset.analysis) {
-      if (asset.analysis.tempo !== undefined) {
-        musicData.tempo = asset.analysis.tempo;
-      }
-      if (asset.analysis.bpm !== undefined) {
-        musicData.tempo = asset.analysis.bpm;
-      }
-      if (asset.analysis.key !== undefined) {
-        musicData.key = asset.analysis.key;
-      }
-      if (asset.analysis.keyConfidence !== undefined) {
-        musicData.keyConfidence = asset.analysis.keyConfidence;
-      }
-      if (asset.analysis.tempoConfidence !== undefined) {
-        musicData.tempoConfidence = asset.analysis.tempoConfidence;
-      }
-    }
-
-    return musicData;
-  } catch (error) {
-    console.warn(
-      '⚠️  Could not extract tempo and key information:',
-      error.response?.data || error.message
-    );
-    return {
-      tempo: null,
-      key: null,
-      keyConfidence: null,
-      tempoConfidence: null,
-    };
-  }
-}
-
 // Route to get video info
 app.post('/api/video-info', async (req, res) => {
   const { url } = req.body;
@@ -361,9 +295,13 @@ app.post('/api/download', async (req, res) => {
         return res.status(500).json({ error: 'Failed to parse video info' });
       }
 
-      // Generate filename based on timestamp
+      // Generate filename based on video title and timestamp
       const timestamp = Date.now();
-      const filename = `audio_${timestamp}`;
+      const sanitizedTitle = videoInfo.title
+        .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special characters
+        .replace(/\s+/g, '_') // Replace spaces with underscores
+        .substring(0, 50); // Limit length
+      const filename = `${sanitizedTitle}_${timestamp}`;
 
       // Download video using yt-dlp
       const ytdlp = spawn('yt-dlp', [
@@ -401,7 +339,6 @@ app.post('/api/download', async (req, res) => {
               thumbnail: videoInfo.thumbnail,
               downloadedAt: new Date().toISOString(),
               filename: downloadedFile,
-              musicAnalysis: null, // Will be updated when stems are separated
               stems: [], // Will be populated when stems are separated
             };
 
@@ -447,61 +384,29 @@ app.post('/api/separate-stems', async (req, res) => {
     return res.status(404).json({ error: 'File not found' });
   }
 
+  // Set a longer timeout for this route
+  req.setTimeout(300000); // 5 minutes
+  res.setTimeout(300000); // 5 minutes
+
   try {
     console.log('🎵 Starting stem separation for:', filename);
 
     // Step 1: Upload to Fadr
     console.log('📤 Uploading to Fadr...');
     const asset = await uploadToFadr(filePath, filename);
+    console.log('✅ Upload completed, asset ID:', asset._id);
 
     // Step 2: Create stem task
     console.log('⚙️  Creating stem task...');
     const task = await createStemTask(asset._id);
+    console.log('✅ Stem task created, task ID:', task._id);
 
     // Step 3: Poll for completion
     console.log('⏳ Waiting for stem separation to complete...');
     const completedTask = await pollTaskStatus(task._id);
+    console.log('✅ Stem separation completed');
 
-    // Step 4: Extract tempo and key information
-    console.log('🎼 Extracting tempo and key information...');
-
-    // First try to extract from the completedTask.asset
-    let musicAnalysis = {
-      tempo: null,
-      key: null,
-      keyConfidence: null,
-      tempoConfidence: null,
-    };
-
-    if (completedTask.asset.metaData) {
-      if (completedTask.asset.metaData.bpm !== undefined) {
-        musicAnalysis.tempo = completedTask.asset.metaData.bpm;
-      }
-      if (completedTask.asset.metaData.tempo !== undefined) {
-        musicAnalysis.tempo = completedTask.asset.metaData.tempo;
-      }
-      if (completedTask.asset.metaData.key !== undefined) {
-        musicAnalysis.key = completedTask.asset.metaData.key;
-      }
-    }
-
-    if (completedTask.asset.analysis) {
-      if (completedTask.asset.analysis.tempo !== undefined) {
-        musicAnalysis.tempo = completedTask.asset.analysis.tempo;
-      }
-      if (completedTask.asset.analysis.bpm !== undefined) {
-        musicAnalysis.tempo = completedTask.asset.analysis.bpm;
-      }
-      if (completedTask.asset.analysis.key !== undefined) {
-        musicAnalysis.key = completedTask.asset.analysis.key;
-      }
-    }
-
-    // If we didn't find data in completedTask, try the separate API call
-    if (!musicAnalysis.tempo && !musicAnalysis.key) {
-      console.log('🔍 No musical analysis in main asset, checking stems...');
-      musicAnalysis = await extractTempoAndKey(completedTask.asset._id);
-    }
+    // Skip musical analysis - not reliable
 
     // Step 5: Get stem assets
     console.log('📥 Getting stem information...');
@@ -513,80 +418,6 @@ app.post('/api/separate-stems', async (req, res) => {
     );
 
     const stemAssets = stemResponses.map((response) => response.data.asset);
-
-    // Check if any stems contain musical analysis data
-    console.log('🔍 Debug: Checking stems for musical analysis data...');
-    stemAssets.forEach((stem, index) => {
-      console.log(`🔍 Debug: Stem ${index} (${stem.metaData?.stemType}):`);
-      if (stem.metaData) {
-        console.log(`  metaData:`, JSON.stringify(stem.metaData, null, 2));
-      }
-      if (stem.analysis) {
-        console.log(`  analysis:`, JSON.stringify(stem.analysis, null, 2));
-      }
-
-      // Check for tempo/key in stem metadata
-      if (stem.metaData?.tempo || stem.metaData?.bpm || stem.metaData?.key) {
-        console.log(`🎵 Found musical data in stem ${index}:`, {
-          tempo: stem.metaData.tempo,
-          bpm: stem.metaData.bpm,
-          key: stem.metaData.key,
-        });
-
-        // Use data from the first stem that has it
-        if (
-          !musicAnalysis.tempo &&
-          (stem.metaData.tempo || stem.metaData.bpm)
-        ) {
-          musicAnalysis.tempo = stem.metaData.tempo || stem.metaData.bpm;
-        }
-        if (!musicAnalysis.key && stem.metaData.key) {
-          musicAnalysis.key = stem.metaData.key;
-        }
-      }
-    });
-
-    // Try to create a separate musical analysis task if no data found
-    if (!musicAnalysis.tempo && !musicAnalysis.key) {
-      console.log('🔍 Debug: Trying to create musical analysis task...');
-      try {
-        // Try different analysis task types that might exist in Fadr API
-        const analysisTaskTypes = [
-          'music',
-          'tempo',
-          'key',
-          'analyze',
-          'musical',
-        ];
-
-        for (const taskType of analysisTaskTypes) {
-          try {
-            console.log(`🔍 Debug: Trying analysis task type: ${taskType}`);
-            const analysisResponse = await axios.post(
-              `${FADR_API_URL}/assets/analyze/${taskType}`,
-              { _id: completedTask.asset._id },
-              { headers: fadrApiHeaders }
-            );
-            console.log(`✅ Found working analysis endpoint: ${taskType}`);
-            console.log(
-              '🔍 Analysis response:',
-              JSON.stringify(analysisResponse.data, null, 2)
-            );
-            break;
-          } catch (error) {
-            console.log(
-              `❌ Analysis task type ${taskType} not available:`,
-              error.response?.status
-            );
-          }
-        }
-      } catch (error) {
-        console.log(
-          '⚠️ Could not create musical analysis task:',
-          error.response?.data || error.message
-        );
-      }
-    }
 
     // Step 6: Download stems
     console.log('💾 Downloading stems...');
@@ -609,43 +440,9 @@ app.post('/api/separate-stems', async (req, res) => {
 
     console.log('✅ Stem separation completed successfully!');
 
-    // Format key information for better readability
-    const formatKey = (keyValue) => {
-      if (keyValue === null || keyValue === undefined) return null;
-
-      const keyNames = [
-        'C',
-        'C#/Db',
-        'D',
-        'D#/Eb',
-        'E',
-        'F',
-        'F#/Gb',
-        'G',
-        'G#/Ab',
-        'A',
-        'A#/Bb',
-        'B',
-      ];
-
-      if (typeof keyValue === 'number' && keyValue >= 0 && keyValue <= 11) {
-        return keyNames[keyValue];
-      }
-
-      return keyValue; // Return as-is if it's already a string or unexpected format
-    };
-
-    // Update metadata with musical analysis and stems info
+    // Update metadata with stems info
     const existingMetadata = loadMetadata(filename);
     if (existingMetadata) {
-      existingMetadata.musicAnalysis = {
-        tempo: musicAnalysis.tempo
-          ? Math.round(musicAnalysis.tempo * 10) / 10
-          : null, // Round to 1 decimal place
-        tempoConfidence: musicAnalysis.tempoConfidence,
-        key: formatKey(musicAnalysis.key),
-        keyConfidence: musicAnalysis.keyConfidence,
-      };
       existingMetadata.stems = stemsInfo;
       existingMetadata.stemsProcessedAt = new Date().toISOString();
       saveMetadata(filename, existingMetadata);
@@ -655,14 +452,6 @@ app.post('/api/separate-stems', async (req, res) => {
       success: true,
       originalFile: filename,
       stems: stemsInfo,
-      musicAnalysis: {
-        tempo: musicAnalysis.tempo
-          ? Math.round(musicAnalysis.tempo * 10) / 10
-          : null, // Round to 1 decimal place
-        tempoConfidence: musicAnalysis.tempoConfidence,
-        key: formatKey(musicAnalysis.key),
-        keyConfidence: musicAnalysis.keyConfidence,
-      },
       message: 'Stem separation completed successfully',
     });
   } catch (error) {
