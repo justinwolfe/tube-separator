@@ -72,7 +72,7 @@ app.post('/api/video-info', async (req, res) => {
 
 // Route to download video
 app.post('/api/download', async (req, res) => {
-  const { url, format = 'best' } = req.body;
+  const { url, format = 'bestaudio/best' } = req.body;
 
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
@@ -81,12 +81,15 @@ app.post('/api/download', async (req, res) => {
   try {
     // Generate filename based on timestamp
     const timestamp = Date.now();
-    const filename = `video_${timestamp}`;
+    const filename = `audio_${timestamp}`;
 
     // Download video using yt-dlp
     const ytdlp = spawn('yt-dlp', [
       '-f',
       format,
+      '--extract-audio',
+      '--audio-format',
+      'mp3',
       '-o',
       path.join(downloadsDir, `${filename}.%(ext)s`),
       url,

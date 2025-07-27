@@ -63,8 +63,8 @@ function App() {
     <div className="App">
       <div className="container">
         <header className="header">
-          <h1>📱 YouTube Downloader</h1>
-          <p>Download videos easily on your mobile device</p>
+          <h1>🎵 YouTube Audio Downloader</h1>
+          <p>Download MP3 audio from YouTube videos</p>
         </header>
 
         <div className="input-section">
@@ -110,21 +110,21 @@ function App() {
 
             <div className="download-options">
               <button
-                onClick={() => handleDownload('best')}
+                onClick={() => handleDownload('bestaudio/best')}
                 disabled={downloading}
                 className="download-btn primary"
               >
-                {downloading ? '⬇️ Downloading...' : '⬇️ Download Best Quality'}
+                {downloading ? '🎵 Downloading...' : '🎵 Download MP3 Audio'}
               </button>
 
               <button
-                onClick={() => handleDownload('worst')}
+                onClick={() => handleDownload('worstaudio/worst')}
                 disabled={downloading}
                 className="download-btn secondary"
               >
                 {downloading
-                  ? '⬇️ Downloading...'
-                  : '📱 Download Mobile Quality'}
+                  ? '🎵 Downloading...'
+                  : '📱 Download Lower Quality MP3'}
               </button>
             </div>
 
