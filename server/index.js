@@ -111,7 +111,8 @@ app.post('/api/download', async (req, res) => {
           res.json({
             success: true,
             filename: downloadedFile,
-            downloadUrl: `/api/file/${downloadedFile}`,
+            streamUrl: `/api/file/${downloadedFile}`,
+            downloadUrl: `/api/download/${downloadedFile}`,
           });
         } else {
           res
@@ -127,8 +128,47 @@ app.post('/api/download', async (req, res) => {
   }
 });
 
-// Route to serve downloaded files
+// Route to serve downloaded files (for streaming/playing)
 app.get('/api/file/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(downloadsDir, filename);
+
+  if (fs.existsSync(filePath)) {
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    // Support range requests for audio streaming
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      
+      const chunksize = (end - start) + 1;
+      const file = fs.createReadStream(filePath, { start, end });
+      const head = {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunksize,
+        'Content-Type': 'audio/mpeg',
+      };
+      res.writeHead(206, head);
+      file.pipe(res);
+    } else {
+      const head = {
+        'Content-Length': fileSize,
+        'Content-Type': 'audio/mpeg',
+      };
+      res.writeHead(200, head);
+      fs.createReadStream(filePath).pipe(res);
+    }
+  } else {
+    res.status(404).json({ error: 'File not found' });
+  }
+});
+
+// Route to download files (force download)
+app.get('/api/download/:filename', (req, res) => {
   const filename = req.params.filename;
   const filePath = path.join(downloadsDir, filename);
 

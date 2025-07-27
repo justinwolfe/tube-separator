@@ -159,13 +159,28 @@ function App() {
           <div className="success-message">
             <h3>✅ Download Complete!</h3>
             <p>File: {downloadSuccess.filename}</p>
-            <a
-              href={downloadSuccess.downloadUrl}
-              download
-              className="download-link"
-            >
-              📥 Download File
-            </a>
+            
+            <div className="player-section">
+              <h4>🎵 Play Audio</h4>
+              <audio 
+                controls 
+                preload="metadata"
+                className="audio-player"
+                src={downloadSuccess.streamUrl}
+              >
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+
+            <div className="download-section">
+              <a
+                href={downloadSuccess.downloadUrl}
+                download
+                className="download-link"
+              >
+                📥 Download File
+              </a>
+            </div>
           </div>
         )}
 
