@@ -5,12 +5,12 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 7329;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../client/build')));
+// app.use(express.static(path.join(__dirname, '../client/build')));
 
 // Create downloads directory if it doesn't exist
 const downloadsDir = path.join(__dirname, 'downloads');
@@ -27,8 +27,8 @@ app.post('/api/video-info', async (req, res) => {
   }
 
   try {
-    // Get video info using youtube-dlp
-    const ytdlp = spawn('youtube-dlp', ['--dump-json', '--no-download', url]);
+    // Get video info using yt-dlp
+    const ytdlp = spawn('yt-dlp', ['--dump-json', '--no-download', url]);
 
     let data = '';
     let error = '';
@@ -83,8 +83,8 @@ app.post('/api/download', async (req, res) => {
     const timestamp = Date.now();
     const filename = `video_${timestamp}`;
 
-    // Download video using youtube-dlp
-    const ytdlp = spawn('youtube-dlp', [
+    // Download video using yt-dlp
+    const ytdlp = spawn('yt-dlp', [
       '-f',
       format,
       '-o',
@@ -155,10 +155,10 @@ app.get('/api/downloads', (req, res) => {
   }
 });
 
-// Serve React app for any non-API routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/build/index.html'));
-});
+// Serve React app for any non-API routes (disabled for development)
+// app.get('*', (req, res) => {
+//   res.sendFile(path.join(__dirname, '../client/build/index.html'));
+// });
 
 // Start server on all interfaces (0.0.0.0) to allow local network access
 app.listen(PORT, '0.0.0.0', () => {
