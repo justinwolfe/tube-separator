@@ -29,6 +29,43 @@ if (!fs.existsSync(downloadsDir)) {
   fs.mkdirSync(downloadsDir, { recursive: true });
 }
 
+// Create metadata storage directory if it doesn't exist
+const metadataDir = path.join(__dirname, 'metadata');
+if (!fs.existsSync(metadataDir)) {
+  fs.mkdirSync(metadataDir, { recursive: true });
+}
+
+// Helper function to save metadata
+function saveMetadata(filename, data) {
+  try {
+    const metadataFile = path.join(metadataDir, `${filename}.json`);
+    fs.writeFileSync(metadataFile, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error('Error saving metadata:', error);
+  }
+}
+
+// Helper function to load metadata
+function loadMetadata(filename) {
+  try {
+    const metadataFile = path.join(metadataDir, `${filename}.json`);
+    if (fs.existsSync(metadataFile)) {
+      return JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
+    }
+  } catch (error) {
+    console.error('Error loading metadata:', error);
+  }
+  return null;
+}
+
+// Helper function to get base filename without stem suffix
+function getBaseFilename(filename) {
+  return filename.replace(
+    /_(vocals|drums|bass|instrumental|melodies|other)\.mp3$/,
+    '.mp3'
+  );
+}
+
 // Helper function for Fadr API requests
 const fadrApiHeaders = {
   Authorization: `Bearer ${FADR_API_KEY}`,
@@ -296,50 +333,96 @@ app.post('/api/download', async (req, res) => {
   }
 
   try {
-    // Generate filename based on timestamp
-    const timestamp = Date.now();
-    const filename = `audio_${timestamp}`;
+    // First get video info to store metadata
+    const ytdlpInfo = spawn('yt-dlp', ['--dump-json', '--no-download', url]);
+    let videoInfoData = '';
+    let infoError = '';
 
-    // Download video using yt-dlp
-    const ytdlp = spawn('yt-dlp', [
-      '-f',
-      format,
-      '--extract-audio',
-      '--audio-format',
-      'mp3',
-      '-o',
-      path.join(downloadsDir, `${filename}.%(ext)s`),
-      url,
-    ]);
-
-    let error = '';
-
-    ytdlp.stderr.on('data', (chunk) => {
-      error += chunk;
+    ytdlpInfo.stdout.on('data', (chunk) => {
+      videoInfoData += chunk;
     });
 
-    ytdlp.on('close', (code) => {
-      if (code === 0) {
-        // Find the downloaded file
-        const files = fs.readdirSync(downloadsDir);
-        const downloadedFile = files.find((file) => file.startsWith(filename));
+    ytdlpInfo.stderr.on('data', (chunk) => {
+      infoError += chunk;
+    });
 
-        if (downloadedFile) {
-          res.json({
-            success: true,
-            filename: downloadedFile,
-            streamUrl: `/api/file/${downloadedFile}`,
-            downloadUrl: `/api/download/${downloadedFile}`,
-            canSeparateStems: !!FADR_API_KEY, // Include stem separation capability
-          });
-        } else {
-          res
-            .status(500)
-            .json({ error: 'Download completed but file not found' });
-        }
-      } else {
-        res.status(400).json({ error: error || 'Download failed' });
+    ytdlpInfo.on('close', (infoCode) => {
+      if (infoCode !== 0) {
+        return res
+          .status(400)
+          .json({ error: infoError || 'Failed to get video info' });
       }
+
+      // Parse video info
+      let videoInfo;
+      try {
+        videoInfo = JSON.parse(videoInfoData);
+      } catch (parseError) {
+        return res.status(500).json({ error: 'Failed to parse video info' });
+      }
+
+      // Generate filename based on timestamp
+      const timestamp = Date.now();
+      const filename = `audio_${timestamp}`;
+
+      // Download video using yt-dlp
+      const ytdlp = spawn('yt-dlp', [
+        '-f',
+        format,
+        '--extract-audio',
+        '--audio-format',
+        'mp3',
+        '-o',
+        path.join(downloadsDir, `${filename}.%(ext)s`),
+        url,
+      ]);
+
+      let error = '';
+
+      ytdlp.stderr.on('data', (chunk) => {
+        error += chunk;
+      });
+
+      ytdlp.on('close', (code) => {
+        if (code === 0) {
+          // Find the downloaded file
+          const files = fs.readdirSync(downloadsDir);
+          const downloadedFile = files.find((file) =>
+            file.startsWith(filename)
+          );
+
+          if (downloadedFile) {
+            // Save metadata
+            const metadata = {
+              originalUrl: url,
+              title: videoInfo.title,
+              uploader: videoInfo.uploader,
+              duration: videoInfo.duration,
+              thumbnail: videoInfo.thumbnail,
+              downloadedAt: new Date().toISOString(),
+              filename: downloadedFile,
+              musicAnalysis: null, // Will be updated when stems are separated
+              stems: [], // Will be populated when stems are separated
+            };
+
+            saveMetadata(downloadedFile, metadata);
+
+            res.json({
+              success: true,
+              filename: downloadedFile,
+              streamUrl: `/api/file/${downloadedFile}`,
+              downloadUrl: `/api/download/${downloadedFile}`,
+              canSeparateStems: !!FADR_API_KEY, // Include stem separation capability
+            });
+          } else {
+            res
+              .status(500)
+              .json({ error: 'Download completed but file not found' });
+          }
+        } else {
+          res.status(400).json({ error: error || 'Download failed' });
+        }
+      });
     });
   } catch (err) {
     res.status(500).json({ error: 'Server error: ' + err.message });
@@ -552,6 +635,22 @@ app.post('/api/separate-stems', async (req, res) => {
       return keyValue; // Return as-is if it's already a string or unexpected format
     };
 
+    // Update metadata with musical analysis and stems info
+    const existingMetadata = loadMetadata(filename);
+    if (existingMetadata) {
+      existingMetadata.musicAnalysis = {
+        tempo: musicAnalysis.tempo
+          ? Math.round(musicAnalysis.tempo * 10) / 10
+          : null, // Round to 1 decimal place
+        tempoConfidence: musicAnalysis.tempoConfidence,
+        key: formatKey(musicAnalysis.key),
+        keyConfidence: musicAnalysis.keyConfidence,
+      };
+      existingMetadata.stems = stemsInfo;
+      existingMetadata.stemsProcessedAt = new Date().toISOString();
+      saveMetadata(filename, existingMetadata);
+    }
+
     res.json({
       success: true,
       originalFile: filename,
@@ -624,6 +723,86 @@ app.get('/api/download/:filename', (req, res) => {
     res.download(filePath);
   } else {
     res.status(404).json({ error: 'File not found' });
+  }
+});
+
+// Route to get saved files with metadata
+app.get('/api/saved-files', (req, res) => {
+  try {
+    const files = fs.readdirSync(downloadsDir);
+
+    // Group files by their base filename (original + stems)
+    const fileGroups = {};
+
+    files.forEach((file) => {
+      const baseFilename = getBaseFilename(file);
+      if (!fileGroups[baseFilename]) {
+        fileGroups[baseFilename] = {
+          original: null,
+          stems: [],
+          metadata: null,
+        };
+      }
+
+      if (file === baseFilename) {
+        // This is the original file
+        const filePath = path.join(downloadsDir, file);
+        const stats = fs.statSync(filePath);
+        fileGroups[baseFilename].original = {
+          filename: file,
+          size: stats.size,
+          created: stats.birthtime,
+          streamUrl: `/api/file/${file}`,
+          downloadUrl: `/api/download/${file}`,
+        };
+
+        // Load metadata for this file
+        fileGroups[baseFilename].metadata = loadMetadata(file);
+      } else {
+        // This is a stem file
+        const filePath = path.join(downloadsDir, file);
+        const stats = fs.statSync(filePath);
+        const stemType = file.match(
+          /_(vocals|drums|bass|instrumental|melodies|other)\.mp3$/
+        )?.[1];
+
+        fileGroups[baseFilename].stems.push({
+          filename: file,
+          type: stemType,
+          size: stats.size,
+          created: stats.birthtime,
+          streamUrl: `/api/file/${file}`,
+          downloadUrl: `/api/download/${file}`,
+        });
+      }
+    });
+
+    // Convert to array and filter out groups without original files
+    const savedFiles = Object.values(fileGroups)
+      .filter((group) => group.original !== null)
+      .map((group) => ({
+        ...group,
+        // Sort stems by type for consistent ordering
+        stems: group.stems.sort((a, b) => {
+          const order = [
+            'vocals',
+            'drums',
+            'bass',
+            'instrumental',
+            'melodies',
+            'other',
+          ];
+          return order.indexOf(a.type) - order.indexOf(b.type);
+        }),
+      }))
+      .sort(
+        (a, b) => new Date(b.original.created) - new Date(a.original.created)
+      ); // Sort by newest first
+
+    res.json(savedFiles);
+  } catch (err) {
+    console.error('Error getting saved files:', err);
+    res.status(500).json({ error: 'Failed to get saved files' });
   }
 });
 
