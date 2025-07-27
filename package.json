@@ -5,8 +5,12 @@
   "main": "server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "cd server && PORT=7329 npm run dev",
-    "client": "cd client && npm start",
+    "predev": "npm run kill-ports",
+    "kill-ports": "lsof -ti:3000,7329 | xargs kill -9 2>/dev/null || true",
+    "server": "npm run kill-server-port && cd server && PORT=7329 npm run dev",
+    "kill-server-port": "lsof -ti:7329 | xargs kill -9 2>/dev/null || true",
+    "client": "npm run kill-client-port && cd client && npm start",
+    "kill-client-port": "lsof -ti:3000 | xargs kill -9 2>/dev/null || true",
     "build": "cd client && npm run build",
     "start": "cd server && PORT=7329 npm start",
     "install-all": "npm install && cd server && npm install && cd ../client && npm install"

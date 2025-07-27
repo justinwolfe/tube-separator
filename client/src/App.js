@@ -274,6 +274,58 @@ function App() {
               individual stems:
             </p>
 
+            {stemsResult.musicAnalysis && (
+              <div className="music-analysis">
+                <h4>🎼 Musical Analysis</h4>
+                <div className="analysis-grid">
+                  {stemsResult.musicAnalysis.tempo && (
+                    <div className="analysis-item">
+                      <span className="analysis-label">🥁 Tempo (BPM):</span>
+                      <span className="analysis-value">
+                        {stemsResult.musicAnalysis.tempo}
+                        {stemsResult.musicAnalysis.tempoConfidence && (
+                          <span className="confidence">
+                            {' '}
+                            (confidence:{' '}
+                            {Math.round(
+                              stemsResult.musicAnalysis.tempoConfidence * 100
+                            )}
+                            %)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {stemsResult.musicAnalysis.key && (
+                    <div className="analysis-item">
+                      <span className="analysis-label">🎹 Key:</span>
+                      <span className="analysis-value">
+                        {stemsResult.musicAnalysis.key}
+                        {stemsResult.musicAnalysis.keyConfidence && (
+                          <span className="confidence">
+                            {' '}
+                            (confidence:{' '}
+                            {Math.round(
+                              stemsResult.musicAnalysis.keyConfidence * 100
+                            )}
+                            %)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {!stemsResult.musicAnalysis.tempo &&
+                    !stemsResult.musicAnalysis.key && (
+                      <div className="analysis-item">
+                        <span className="analysis-value">
+                          No musical analysis data available
+                        </span>
+                      </div>
+                    )}
+                </div>
+              </div>
+            )}
+
             <div className="stems-grid">
               {stemsResult.stems.map((stem, index) => (
                 <div key={index} className="stem-item">
@@ -314,6 +366,10 @@ function App() {
           <p className="tip">
             🎛️ Stem separation uses AI to isolate vocals, drums, bass, and
             melodies
+          </p>
+          <p className="tip">
+            🎼 Musical analysis provides tempo (BPM) and key detection for each
+            track
           </p>
         </footer>
       </div>
