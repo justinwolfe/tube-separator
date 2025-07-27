@@ -1,217 +1,181 @@
-# 📱 YouTube Downloader
+# YouTube Audio Downloader & Stem Separator
 
-A modern, mobile-friendly web application for downloading YouTube videos using youtube-dlp. Built with React frontend and Node.js backend, designed to work seamlessly on your local network and mobile devices.
+A modern web application that downloads MP3 audio from YouTube videos and separates them into individual stems (vocals, drums, bass, melodies) using AI-powered stem separation.
 
-## ✨ Features
+## Features
 
-- 🎯 **Simple Interface**: Clean, modern UI optimized for mobile devices
-- 📱 **Mobile-Friendly**: Responsive design that works great on iOS and Android
-- 🌐 **Local Network Access**: Access from any device on your local network
-- 🔍 **Video Preview**: Get video information before downloading
-- 📥 **Multiple Formats**: Choose from various video quality options
-- ⚡ **Fast Downloads**: Powered by youtube-dlp for reliable downloads
-- 🎨 **Beautiful UI**: Modern glassmorphism design with smooth animations
+- 🎵 Download audio from YouTube videos in MP3 format
+- 🎛️ AI-powered stem separation using [Fadr API](https://fadr.com)
+- 🎤 Separate tracks into: Vocals, Drums, Bass, Melodies, and Instrumental
+- 🎧 Built-in audio player for preview
+- 📱 Responsive design for mobile and desktop
+- ⚡ Real-time processing status updates
 
-## 🛠️ Prerequisites
+## Setup Instructions
 
-Before running this application, make sure you have:
+### Prerequisites
 
-1. **Node.js** (v14 or higher) - [Download here](https://nodejs.org/)
-2. **youtube-dlp** - Install using one of these methods:
+- Node.js (v14 or higher)
+- npm or yarn
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed on your system
+- Fadr API key (for stem separation feature)
 
-### Installing youtube-dlp
+### Installation
 
-**On macOS (using Homebrew):**
+1. **Clone the repository**
 
-```bash
-brew update
-brew install yt-dlp
-```
+   ```bash
+   git clone <repository-url>
+   cd sampler
+   ```
 
-**On macOS (using pip - Recommended):**
-
-```bash
-pip3 install yt-dlp
-```
-
-**On Linux:**
-
-```bash
-sudo apt update
-sudo apt install yt-dlp
-# or
-pip3 install yt-dlp
-```
-
-**On Windows:**
-
-- Download from [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases)
-- Or use pip: `pip install yt-dlp`
-
-## 🚀 Quick Start
-
-1. **Clone or download this project**
-
-2. **Install all dependencies:**
+2. **Install dependencies**
 
    ```bash
    npm run install-all
    ```
 
-3. **Start the development server:**
+3. **Set up environment variables**
+
+   Create a `.env` file in the root directory:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit the `.env` file and add your Fadr API key:
+
+   ```env
+   FADR_API_KEY=your_fadr_api_key_here
+   PORT=7329
+   ```
+
+### Getting Your Fadr API Key
+
+1. Visit [Fadr.com](https://fadr.com) and create an account
+2. Go to your account page and navigate to the API tab
+3. Click "Create New API Key" and give it a name
+4. Copy the generated API key to your `.env` file
+
+**Important**: Keep your API key secret and never commit it to version control. The `.env` file is already included in `.gitignore`.
+
+### Running the Application
+
+1. **Development mode** (runs both client and server):
 
    ```bash
    npm run dev
    ```
 
-4. **Access the app:**
-   - Locally: `http://localhost:3000`
-   - From other devices: `http://[YOUR-LOCAL-IP]:5000`
-
-## 📖 Usage
-
-1. **Get your local IP address:**
+2. **Production mode**:
 
    ```bash
-   # On macOS/Linux
-   ifconfig | grep "inet " | grep -v 127.0.0.1
-
-   # On Windows
-   ipconfig | findstr "IPv4"
+   npm run build
+   npm start
    ```
 
-2. **Open the app on your mobile device:**
+3. **Server only**:
 
-   - Enter `http://[YOUR-LOCAL-IP]:5000` in your mobile browser
-   - For example: `http://192.168.1.100:5000`
+   ```bash
+   npm run server
+   ```
 
-3. **Download videos:**
-   - Paste a YouTube URL in the input field
-   - Tap the search button (🔍) to get video info
-   - Choose your preferred download quality
-   - Tap download and wait for completion
-   - Download the file to your device
+4. **Client only**:
+   ```bash
+   npm run client
+   ```
 
-## 🏗️ Project Structure
+The application will be available at `http://localhost:7329`
 
-```
-youtube-downloader/
-├── package.json          # Main project config
-├── server/               # Backend (Node.js/Express)
-│   ├── package.json
-│   ├── index.js         # Main server file
-│   └── downloads/       # Downloaded files (created automatically)
-├── client/              # Frontend (React)
-│   ├── package.json
-│   ├── public/
-│   │   ├── index.html
-│   │   └── manifest.json
-│   └── src/
-│       ├── App.js       # Main React component
-│       ├── App.css      # Styles
-│       ├── index.js     # React entry point
-│       └── index.css    # Global styles
-└── README.md
-```
+## Usage
 
-## 🔧 Configuration
+### Basic Audio Download
 
-### Server Configuration
+1. Paste a YouTube URL into the input field
+2. Click the search icon to get video information
+3. Choose your preferred download quality
+4. Click "Download MP3 Audio" to download the file
+5. Use the built-in player to preview the audio
 
-The server runs on port 5000 by default and binds to all network interfaces (`0.0.0.0`) to allow local network access.
+### Stem Separation
 
-To change the port, set the `PORT` environment variable:
+1. After downloading an audio file, you'll see a "Stem Separation" section
+2. Click "Separate into Stems" to start the AI processing
+3. Wait 30-60 seconds for the separation to complete
+4. Preview and download individual stems (vocals, drums, bass, etc.)
 
-```bash
-PORT=8080 npm run dev
-```
+## API Endpoints
 
-### Client Configuration
+### Video Information
 
-The React client runs on port 3000 in development mode and proxies API requests to the backend.
+- `POST /api/video-info` - Get video metadata
+- `POST /api/download` - Download video as MP3
 
-## 📱 Mobile Optimization
+### Stem Separation
 
-This app is specifically optimized for mobile devices:
+- `POST /api/separate-stems` - Separate audio into stems
 
-- **Responsive Design**: Adapts to different screen sizes
-- **Touch-Friendly**: Large buttons and touch targets
-- **iOS Safari Support**: Prevents zoom on input focus
-- **Fast Loading**: Optimized assets and code splitting
-- **PWA Features**: Can be added to home screen on mobile
+### File Management
 
-## 🎛️ API Endpoints
+- `GET /api/file/:filename` - Stream audio files
+- `GET /api/download/:filename` - Download files
+- `GET /api/downloads` - List all downloaded files
 
-- `POST /api/video-info` - Get video information
-- `POST /api/download` - Download video
-- `GET /api/file/:filename` - Serve downloaded files
-- `GET /api/downloads` - List downloaded files
+## How Stem Separation Works
 
-## 🔒 Security Note
+The stem separation feature uses the [Fadr API](https://fadr.com/docs/api-stems-tutorial) which employs advanced AI models to:
 
-This application is designed for local network use only. Do not expose it to the public internet without proper security measures.
+1. **Upload** your audio file to Fadr's servers
+2. **Analyze** the audio using machine learning models
+3. **Separate** the audio into 5 primary stems:
+   - 🎤 **Vocals** - Lead and backing vocals
+   - 🥁 **Drums** - Drum kit and percussion
+   - 🎸 **Bass** - Bass guitar and low-end instruments
+   - 🎹 **Melodies** - Lead instruments and melodies
+   - 🎼 **Instrumental** - Combined instrumental track
+4. **Download** the separated stems back to your server
 
-## 🐛 Troubleshooting
+## Technical Stack
 
-### Common Issues
+- **Frontend**: React.js with responsive CSS
+- **Backend**: Node.js with Express
+- **Audio Processing**: yt-dlp for downloads, Fadr API for stem separation
+- **Environment**: dotenv for configuration management
 
-1. **"yt-dlp not found" error:**
+## Troubleshooting
 
-   - Make sure yt-dlp is installed and in your PATH
-   - Try reinstalling: `pip3 install --upgrade yt-dlp`
+### Stem Separation Not Available
 
-2. **Can't access from mobile device:**
+- Ensure your `FADR_API_KEY` is correctly set in the `.env` file
+- Check that the server console shows "Fadr API integration enabled"
+- Verify your Fadr account has sufficient credits
 
-   - Ensure both devices are on the same network
-   - Check firewall settings
-   - Try accessing via the server's IP: `http://[LOCAL-IP]:5000`
+### Download Issues
 
-3. **Download fails:**
+- Make sure `yt-dlp` is installed and available in your system PATH
+- Try different video URLs if one doesn't work
+- Check the server logs for detailed error messages
 
-   - Check if the URL is valid
-   - Some videos may be restricted or private
-   - Update yt-dlp: `pip3 install --upgrade yt-dlp`
+### Audio Playback Issues
 
-4. **Port already in use:**
-   - Change the port: `PORT=8080 npm run dev`
-   - Kill existing processes on the port
+- Ensure your browser supports MP3 playback
+- Check that downloaded files exist in the `server/downloads/` directory
+- Try refreshing the page if audio controls don't appear
 
-### Getting Your Local IP
+## Contributing
 
-**macOS/Linux:**
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-```bash
-ifconfig en0 | grep inet | head -1 | awk '{print $2}'
-```
+## License
 
-**Windows:**
+MIT License - see LICENSE file for details
 
-```cmd
-for /f "tokens=2 delims=:" %i in ('ipconfig ^| findstr "IPv4"') do echo %i
-```
+## Acknowledgments
 
-## 📦 Production Build
-
-To build for production:
-
-```bash
-# Build the React app
-npm run build
-
-# Start production server
-npm start
-```
-
-The production build will serve the React app from the Express server.
-
-## 🤝 Contributing
-
-Feel free to submit issues, fork the repository, and create pull requests for improvements.
-
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
-
----
-
-**⚠️ Disclaimer:** This tool is for personal use only. Please respect YouTube's Terms of Service and copyright laws. Only download videos you have permission to download.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) for video downloading
+- [Fadr](https://fadr.com) for AI-powered stem separation
+- React and Node.js communities for excellent documentation
