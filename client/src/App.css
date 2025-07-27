@@ -1,0 +1,347 @@
+.App {
+  min-height: 100vh;
+  padding: 20px;
+  color: white;
+}
+
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.header h1 {
+  margin: 0 0 10px 0;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.header p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 1.1rem;
+}
+
+.input-section {
+  margin-bottom: 30px;
+}
+
+.input-group {
+  display: flex;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 15px;
+  border-radius: 15px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.url-input {
+  flex: 1;
+  padding: 15px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+.url-input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.url-input:focus {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.02);
+}
+
+.info-btn {
+  padding: 15px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(45deg, #ff6b6b, #ff8e53);
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 60px;
+}
+
+.info-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+}
+
+.info-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error-message {
+  background: rgba(255, 59, 48, 0.2);
+  color: #ff3b30;
+  padding: 15px 20px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(255, 59, 48, 0.3);
+  backdrop-filter: blur(10px);
+  font-weight: 500;
+}
+
+.success-message {
+  background: rgba(52, 199, 89, 0.2);
+  color: #34c759;
+  padding: 20px;
+  border-radius: 15px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(52, 199, 89, 0.3);
+  backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+.success-message h3 {
+  margin: 0 0 10px 0;
+}
+
+.download-link {
+  display: inline-block;
+  padding: 12px 24px;
+  background: linear-gradient(45deg, #34c759, #30d158);
+  color: white;
+  text-decoration: none;
+  border-radius: 10px;
+  margin-top: 15px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.download-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(52, 199, 89, 0.3);
+}
+
+.video-info {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 30px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.video-details {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 25px;
+  align-items: flex-start;
+}
+
+.thumbnail {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.details {
+  flex: 1;
+  min-width: 0;
+}
+
+.details h3 {
+  margin: 0 0 10px 0;
+  font-size: 1.2rem;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.details p {
+  margin: 5px 0;
+  opacity: 0.9;
+  font-size: 0.95rem;
+}
+
+.download-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 25px;
+}
+
+.download-btn {
+  padding: 16px 24px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 100%;
+}
+
+.download-btn.primary {
+  background: linear-gradient(45deg, #007aff, #5ac8fa);
+  color: white;
+}
+
+.download-btn.secondary {
+  background: linear-gradient(45deg, #ff9500, #ffcc02);
+  color: white;
+}
+
+.download-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 122, 255, 0.3);
+}
+
+.download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.formats-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  padding-top: 20px;
+}
+
+.formats-section h4 {
+  margin: 0 0 15px 0;
+  font-size: 1.1rem;
+}
+
+.formats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.format-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 15px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.format-quality {
+  flex: 1;
+  font-weight: 500;
+}
+
+.format-size {
+  flex: 1;
+  text-align: center;
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.format-download-btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(45deg, #34c759, #30d158);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+}
+
+.format-download-btn:hover:not(:disabled) {
+  transform: scale(1.1);
+}
+
+.format-download-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.footer {
+  text-align: center;
+  margin-top: 40px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.footer p {
+  margin: 5px 0;
+  opacity: 0.8;
+}
+
+.footer .tip {
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+/* Mobile specific styles */
+@media (max-width: 768px) {
+  .App {
+    padding: 15px;
+  }
+
+  .header h1 {
+    font-size: 1.8rem;
+  }
+
+  .header p {
+    font-size: 1rem;
+  }
+
+  .video-details {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .thumbnail {
+    width: 100%;
+    height: 200px;
+    max-width: 300px;
+    margin: 0 auto;
+  }
+
+  .url-input {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  .format-item {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+
+  .format-quality,
+  .format-size {
+    flex: none;
+  }
+}
+
+/* iOS specific styles */
+@supports (-webkit-touch-callout: none) {
+  .url-input {
+    font-size: 16px !important; /* Prevents zoom on iOS */
+  }
+
+  .download-btn,
+  .info-btn {
+    -webkit-appearance: none;
+    border-radius: 12px;
+  }
+}
