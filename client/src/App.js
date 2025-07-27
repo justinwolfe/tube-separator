@@ -67,30 +67,11 @@ function App() {
     }
   };
 
-  const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown size';
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return Math.round((bytes / Math.pow(1024, i)) * 100) / 100 + ' ' + sizes[i];
-  };
-
   const formatDuration = (seconds) => {
     if (!seconds) return 'Unknown duration';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const getStemIcon = (stemType) => {
-    const icons = {
-      vocals: '🎤',
-      drums: '🥁',
-      bass: '🎸',
-      melodies: '🎹',
-      instrumental: '🎼',
-      other: '🎵',
-    };
-    return icons[stemType] || icons.other;
   };
 
   const getStemDisplayName = (stemType) => {
@@ -111,18 +92,15 @@ function App() {
     <div className="App">
       <div className="container">
         <header className="header">
-          <h1>🎵 YouTube Audio Downloader & Stem Separator</h1>
-          <p>
-            Download MP3 audio from YouTube videos and separate into individual
-            stems
-          </p>
+          <h1>SAMPLER</h1>
+          <p>Extract • Isolate • Transform</p>
         </header>
 
         <div className="input-section">
           <div className="input-group">
             <input
               type="url"
-              placeholder="Paste YouTube URL here..."
+              placeholder="Enter YouTube URL..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="url-input"
@@ -131,14 +109,14 @@ function App() {
             <button
               onClick={handleGetInfo}
               disabled={loading || downloading || separatingStems}
-              className="info-btn"
+              className="action-btn"
             >
-              {loading ? '⏳' : '🔍'}
+              {loading ? 'ANALYZING' : 'ANALYZE'}
             </button>
           </div>
         </div>
 
-        {error && <div className="error-message">❌ {error}</div>}
+        {error && <div className="error-message">{error}</div>}
 
         {videoInfo && (
           <div className="video-info">
@@ -152,10 +130,8 @@ function App() {
               )}
               <div className="details">
                 <h3>{videoInfo.title}</h3>
-                <p className="uploader">👤 {videoInfo.uploader}</p>
-                <p className="duration">
-                  ⏱️ {formatDuration(videoInfo.duration)}
-                </p>
+                <p className="uploader">{videoInfo.uploader}</p>
+                <p className="duration">{formatDuration(videoInfo.duration)}</p>
               </div>
             </div>
 
@@ -163,56 +139,22 @@ function App() {
               <button
                 onClick={() => handleDownload('bestaudio/best')}
                 disabled={downloading || separatingStems}
-                className="download-btn primary"
+                className="download-btn"
               >
-                {downloading ? '🎵 Downloading...' : '🎵 Download MP3 Audio'}
-              </button>
-
-              <button
-                onClick={() => handleDownload('worstaudio/worst')}
-                disabled={downloading || separatingStems}
-                className="download-btn secondary"
-              >
-                {downloading
-                  ? '🎵 Downloading...'
-                  : '📱 Download Lower Quality MP3'}
+                {downloading ? 'EXTRACTING...' : 'EXTRACT AUDIO'}
               </button>
             </div>
-
-            {videoInfo.formats && videoInfo.formats.length > 0 && (
-              <div className="formats-section">
-                <h4>Available Formats:</h4>
-                <div className="formats-list">
-                  {videoInfo.formats.slice(0, 5).map((format, index) => (
-                    <div key={index} className="format-item">
-                      <span className="format-quality">
-                        {format.quality || format.ext}
-                      </span>
-                      <span className="format-size">
-                        {formatFileSize(format.filesize)}
-                      </span>
-                      <button
-                        onClick={() => handleDownload(format.format_id)}
-                        disabled={downloading || separatingStems}
-                        className="format-download-btn"
-                      >
-                        ⬇️
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
         {downloadSuccess && (
-          <div className="success-message">
-            <h3>✅ Download Complete!</h3>
-            <p>File: {downloadSuccess.filename}</p>
+          <div className="success-section">
+            <div className="file-info">
+              <h3>EXTRACTION COMPLETE</h3>
+              <p className="filename">{downloadSuccess.filename}</p>
+            </div>
 
             <div className="player-section">
-              <h4>🎵 Play Audio</h4>
               <audio
                 controls
                 preload="metadata"
@@ -229,36 +171,30 @@ function App() {
                 download
                 className="download-link"
               >
-                📥 Download File
+                DOWNLOAD
               </a>
             </div>
 
             {downloadSuccess.canSeparateStems && (
               <div className="stem-separation-section">
-                <h4>🎛️ Stem Separation</h4>
+                <h4>STEM ISOLATION</h4>
                 <p>
-                  Separate this audio into individual tracks (vocals, drums,
-                  bass, melodies)
+                  Separate audio into individual components:\nvocals • drums •
+                  bass • melodies
                 </p>
                 <button
                   onClick={handleSeparateStems}
                   disabled={separatingStems}
                   className="stems-btn"
                 >
-                  {separatingStems
-                    ? '🎛️ Separating Stems... (This may take 30-60 seconds)'
-                    : '🎛️ Separate into Stems'}
+                  {separatingStems ? 'ISOLATING...' : 'ISOLATE STEMS'}
                 </button>
                 {separatingStems && (
                   <div className="stem-progress">
-                    <p>
-                      ⏳ Processing with AI... Please wait while we separate
-                      your audio into individual stems.
-                    </p>
-                    <p>
-                      💡 This process typically takes 30-60 seconds depending on
-                      the length of your audio.
-                    </p>
+                    <div className="progress-bar">
+                      <div className="progress-fill"></div>
+                    </div>
+                    <p>Processing with AI... This may take 30-60 seconds</p>
                   </div>
                 )}
               </div>
@@ -268,29 +204,24 @@ function App() {
 
         {stemsResult && (
           <div className="stems-result">
-            <h3>🎛️ Stem Separation Complete!</h3>
-            <p>
-              Your audio has been separated into {stemsResult.stems.length}{' '}
-              individual stems:
-            </p>
+            <h3>ISOLATION COMPLETE</h3>
+            <p>{stemsResult.stems.length} stems extracted</p>
 
             {stemsResult.musicAnalysis && (
               <div className="music-analysis">
-                <h4>🎼 Musical Analysis</h4>
+                <h4>MUSICAL ANALYSIS</h4>
                 <div className="analysis-grid">
                   {stemsResult.musicAnalysis.tempo && (
                     <div className="analysis-item">
-                      <span className="analysis-label">🥁 Tempo (BPM):</span>
+                      <span className="analysis-label">TEMPO</span>
                       <span className="analysis-value">
-                        {stemsResult.musicAnalysis.tempo}
+                        {stemsResult.musicAnalysis.tempo} BPM
                         {stemsResult.musicAnalysis.tempoConfidence && (
                           <span className="confidence">
-                            {' '}
-                            (confidence:{' '}
                             {Math.round(
                               stemsResult.musicAnalysis.tempoConfidence * 100
                             )}
-                            %)
+                            % confidence
                           </span>
                         )}
                       </span>
@@ -298,30 +229,20 @@ function App() {
                   )}
                   {stemsResult.musicAnalysis.key && (
                     <div className="analysis-item">
-                      <span className="analysis-label">🎹 Key:</span>
+                      <span className="analysis-label">KEY</span>
                       <span className="analysis-value">
                         {stemsResult.musicAnalysis.key}
                         {stemsResult.musicAnalysis.keyConfidence && (
                           <span className="confidence">
-                            {' '}
-                            (confidence:{' '}
                             {Math.round(
                               stemsResult.musicAnalysis.keyConfidence * 100
                             )}
-                            %)
+                            % confidence
                           </span>
                         )}
                       </span>
                     </div>
                   )}
-                  {!stemsResult.musicAnalysis.tempo &&
-                    !stemsResult.musicAnalysis.key && (
-                      <div className="analysis-item">
-                        <span className="analysis-value">
-                          No musical analysis data available
-                        </span>
-                      </div>
-                    )}
                 </div>
               </div>
             )}
@@ -330,8 +251,7 @@ function App() {
               {stemsResult.stems.map((stem, index) => (
                 <div key={index} className="stem-item">
                   <div className="stem-header">
-                    <span className="stem-icon">{getStemIcon(stem.type)}</span>
-                    <h4>{getStemDisplayName(stem.type)}</h4>
+                    <h4>{getStemDisplayName(stem.type).toUpperCase()}</h4>
                   </div>
 
                   <div className="stem-controls">
@@ -349,7 +269,7 @@ function App() {
                       download
                       className="stem-download-link"
                     >
-                      📥 Download {getStemDisplayName(stem.type)}
+                      DOWNLOAD
                     </a>
                   </div>
                 </div>
@@ -357,21 +277,6 @@ function App() {
             </div>
           </div>
         )}
-
-        <footer className="footer">
-          <p>🚀 Powered by youtube-dlp & Fadr AI</p>
-          <p className="tip">
-            💡 Tip: Works best with YouTube, but supports many video sites!
-          </p>
-          <p className="tip">
-            🎛️ Stem separation uses AI to isolate vocals, drums, bass, and
-            melodies
-          </p>
-          <p className="tip">
-            🎼 Musical analysis provides tempo (BPM) and key detection for each
-            track
-          </p>
-        </footer>
       </div>
     </div>
   );
