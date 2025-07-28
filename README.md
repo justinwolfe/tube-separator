@@ -163,7 +163,7 @@ The stem separation feature uses the [Fadr API](https://fadr.com/docs/api-stems-
 
 ### Download Issues
 
-- Make sure `yt-dlp` is installed and available in your system PATH
+- Make sure `yt-dlp` and `ffmpeg` are installed and available in your system PATH
 - Try different video URLs if one doesn't work
 - Check the server logs for detailed error messages
 
