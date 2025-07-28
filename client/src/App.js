@@ -21,7 +21,7 @@ function App() {
       const response = await axios.get('/api/saved-files');
       setSavedFiles(response.data);
     } catch (err) {
-      console.error('Failed to load saved files:', err);
+      console.error('failed to load saved files:', err);
     } finally {
       setSavedFilesLoading(false);
     }
@@ -36,7 +36,7 @@ function App() {
 
   const handleGetInfo = async () => {
     if (!url.trim()) {
-      setError('Please enter a YouTube URL');
+      setError('please enter a youtube url');
       return;
     }
 
@@ -48,7 +48,7 @@ function App() {
       const response = await axios.post('/api/video-info', { url });
       setVideoInfo(response.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to get video info');
+      setError(err.response?.data?.error || 'failed to get video info');
     } finally {
       setLoading(false);
     }
@@ -99,11 +99,11 @@ function App() {
         } catch (stemsErr) {
           console.error('Stem separation error:', stemsErr);
           let errorMessage =
-            'Audio downloaded successfully, but stem separation failed';
+            'audio downloaded successfully, but stem separation failed';
 
           if (stemsErr.code === 'ECONNABORTED') {
             errorMessage +=
-              ': Request timed out. The server may be processing your request.';
+              ': request timed out. the server may be processing your request.';
           } else if (stemsErr.response?.data?.error) {
             errorMessage += ': ' + stemsErr.response.data.error;
           } else {
@@ -123,7 +123,7 @@ function App() {
         }));
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Download failed');
+      setError(err.response?.data?.error || 'download failed');
       setDownloading(false);
     } finally {
       setSeparatingStems(false);
@@ -131,7 +131,7 @@ function App() {
   };
 
   const formatDuration = (seconds) => {
-    if (!seconds) return 'Unknown duration';
+    if (!seconds) return 'unknown duration';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -155,8 +155,8 @@ function App() {
     <div className="App">
       <div className="container">
         <header className="header">
-          <h1>SAMPLER</h1>
-          <p>Download • Isolate • Transform</p>
+          <h1>tube-splitter</h1>
+          <p>download • isolate • transform</p>
         </header>
 
         {/* Tab Navigation */}
@@ -165,13 +165,13 @@ function App() {
             className={`tab-button ${activeTab === 'main' ? 'active' : ''}`}
             onClick={() => handleTabChange('main')}
           >
-            DOWNLOAD
+            download
           </button>
           <button
             className={`tab-button ${activeTab === 'saved' ? 'active' : ''}`}
             onClick={() => handleTabChange('saved')}
           >
-            SAVED
+            saved
           </button>
         </div>
 
@@ -225,7 +225,7 @@ function MainView({
         <div className="input-group">
           <input
             type="url"
-            placeholder="Enter YouTube URL..."
+            placeholder="enter youtube url..."
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             className="url-input"
@@ -236,7 +236,7 @@ function MainView({
             disabled={loading || downloading || separatingStems}
             className="action-btn"
           >
-            {loading ? 'FINDING' : 'FIND'}
+            {loading ? 'finding' : 'find'}
           </button>
         </div>
       </div>
@@ -266,7 +266,7 @@ function MainView({
               disabled={downloading || separatingStems}
               className="download-btn"
             >
-              {downloading ? 'DOWNLOADING...' : 'DOWNLOAD AUDIO'}
+              {downloading ? 'downloading...' : 'download audio'}
             </button>
           </div>
         </div>
@@ -274,16 +274,10 @@ function MainView({
 
       {extractionResult && (
         <div className="extraction-result">
-          <h3>DOWNLOADED AUDIO</h3>
-          <div className="file-info">
-            <p className="filename">{extractionResult.filename}</p>
-          </div>
-
           <div className="player-section">
             <CustomAudioPlayer
               originalTrack={extractionResult.streamUrl}
               stems={extractionResult.stems || []}
-              title="AUDIO PLAYER"
               className="main-player"
             />
           </div>
@@ -293,7 +287,7 @@ function MainView({
               <div className="progress-bar">
                 <div className="progress-fill"></div>
               </div>
-              <p>Processing with AI... This may take 30-60 seconds</p>
+              <p>separating stems via fadr...this may take 30-60 seconds</p>
             </div>
           )}
         </div>
@@ -312,7 +306,7 @@ function SavedView({
   if (loading) {
     return (
       <div className="saved-loading">
-        <div className="loading-message">Loading saved files...</div>
+        <div className="loading-message">loading saved files...</div>
       </div>
     );
   }
@@ -321,8 +315,8 @@ function SavedView({
     return (
       <div className="saved-empty">
         <div className="empty-message">
-          <h3>No saved files yet</h3>
-          <p>Download and isolate audio tracks to see them here</p>
+          <h3>no saved files yet</h3>
+          <p>download and isolate audio tracks to see them here</p>
         </div>
       </div>
     );
@@ -348,9 +342,9 @@ function SavedFileItem({ fileGroup, formatDuration, getStemDisplayName }) {
   const [expanded, setExpanded] = useState(false);
 
   const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return '0 bytes';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ['bytes', 'kb', 'mb', 'gb'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
@@ -385,7 +379,7 @@ function SavedFileItem({ fileGroup, formatDuration, getStemDisplayName }) {
               <span className="saved-duration">
                 {metadata?.duration
                   ? formatDuration(metadata.duration)
-                  : 'Unknown duration'}
+                  : 'unknown duration'}
               </span>
               <span className="saved-date">{formatDate(original.created)}</span>
               <span className="saved-size">
