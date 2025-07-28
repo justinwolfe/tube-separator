@@ -1,4 +1,4 @@
-# YouTube Audio Downloader & Stem Separator
+# tube-stemmer 
 
 A modern web application that downloads MP3 audio from YouTube videos and separates them into individual stems (vocals, drums, bass, melodies) using AI-powered stem separation.
 
