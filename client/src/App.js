@@ -260,34 +260,43 @@ function MainView({
             </div>
           </div>
 
-          <div className="download-options">
-            <button
-              onClick={() => handleDownload('bestaudio/best')}
-              disabled={downloading || separatingStems}
-              className="download-btn"
-            >
-              {downloading ? 'downloading...' : 'download audio'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {extractionResult && (
-        <div className="extraction-result">
-          <div className="player-section">
-            <CustomAudioPlayer
-              originalTrack={extractionResult.streamUrl}
-              stems={extractionResult.stems || []}
-              className="main-player"
-            />
-          </div>
-
-          {extractionResult.processingStems && (
-            <div className="stem-progress">
+          {/* Show progress bar when processing, otherwise show button or player */}
+          {downloading || separatingStems ? (
+            <div className="processing-section">
               <div className="progress-bar">
                 <div className="progress-fill"></div>
               </div>
-              <p>separating stems via fadr...this may take 30-60 seconds</p>
+              <p>
+                {downloading
+                  ? 'downloading audio...'
+                  : 'separating stems via fadr...this may take 30-60 seconds'}
+              </p>
+            </div>
+          ) : extractionResult ? (
+            <div className="player-section">
+              <CustomAudioPlayer
+                originalTrack={extractionResult.streamUrl}
+                stems={extractionResult.stems || []}
+                className="main-player"
+              />
+              {extractionResult.processingStems && (
+                <div className="stem-progress">
+                  <div className="progress-bar">
+                    <div className="progress-fill"></div>
+                  </div>
+                  <p>separating stems via fadr...this may take 30-60 seconds</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="download-options">
+              <button
+                onClick={() => handleDownload('bestaudio/best')}
+                disabled={downloading || separatingStems}
+                className="download-btn"
+              >
+                process
+              </button>
             </div>
           )}
         </div>
