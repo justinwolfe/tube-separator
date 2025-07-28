@@ -395,7 +395,7 @@ const CustomAudioPlayer = ({
         </button>
 
         <button className="play-pause-btn" onClick={togglePlayPause}>
-          {isPlaying ? '⏸' : '▶'}
+          {isPlaying ? '||' : '▶'}
         </button>
 
         <button className="seek-btn" onClick={seekForward}>
