@@ -263,18 +263,6 @@ const CustomAudioPlayer = ({
         if (originalAudio) {
           await originalAudio.play();
         }
-      } else if (stemType === 'all') {
-        if (originalAudio) {
-          await originalAudio.play();
-        }
-        await Promise.all(
-          stems.map(async (stem) => {
-            const audio = stemAudioRefs.current[stem.type];
-            if (audio) {
-              return audio.play();
-            }
-          })
-        );
       } else {
         const stemAudio = stemAudioRefs.current[stemType];
         if (stemAudio) {
@@ -294,6 +282,25 @@ const CustomAudioPlayer = ({
     const originalAudio = originalAudioRef.current;
     if (originalAudio) {
       originalAudio.volume = value;
+    }
+  };
+
+  // Seek functionality
+  const seekBackward = () => {
+    const originalAudio = originalAudioRef.current;
+    if (originalAudio) {
+      const newTime = Math.max(0, currentTime - 5);
+      setCurrentTime(newTime);
+      syncAudioElements(newTime);
+    }
+  };
+
+  const seekForward = () => {
+    const originalAudio = originalAudioRef.current;
+    if (originalAudio) {
+      const newTime = Math.min(duration, currentTime + 5);
+      setCurrentTime(newTime);
+      syncAudioElements(newTime);
     }
   };
 
@@ -383,21 +390,17 @@ const CustomAudioPlayer = ({
 
       {/* Controls */}
       <div className="player-controls">
+        <button className="seek-btn" onClick={seekBackward}>
+          ‹‹
+        </button>
+
         <button className="play-pause-btn" onClick={togglePlayPause}>
           {isPlaying ? '⏸' : '▶'}
         </button>
 
-        <div className="volume-control">
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-            className="volume-slider"
-          />
-        </div>
+        <button className="seek-btn" onClick={seekForward}>
+          ››
+        </button>
       </div>
 
       {/* Stem Toggles */}
@@ -423,43 +426,7 @@ const CustomAudioPlayer = ({
               {stem.type.toUpperCase()}
             </button>
           ))}
-
-          {stems.length > 0 && (
-            <button
-              className={`stem-toggle all ${
-                activeStem === 'all' ? 'active' : ''
-              }`}
-              onClick={() => handleStemToggle('all')}
-            >
-              ALL STEMS
-            </button>
-          )}
         </div>
-
-        {/* Individual Stem Volume Controls */}
-        {activeStem === 'all' && (
-          <div className="individual-stem-controls">
-            {stems.map((stem) => (
-              <div key={stem.type} className="stem-volume-control">
-                <label>{stem.type.toUpperCase()}</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={stemVolumes[stem.type] || 0.8}
-                  onChange={(e) =>
-                    handleStemVolumeChange(
-                      stem.type,
-                      parseFloat(e.target.value)
-                    )
-                  }
-                  className="stem-volume-slider"
-                />
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
