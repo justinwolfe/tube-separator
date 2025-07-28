@@ -109,24 +109,37 @@ const CustomAudioPlayer = ({
     }
   };
 
-  // Handle timeline seek
-  const handleTimelineClick = (e) => {
+  // Get position from mouse or touch event
+  const getEventPosition = (e) => {
+    if (e.touches && e.touches[0]) {
+      return e.touches[0].clientX;
+    }
+    return e.clientX;
+  };
+
+  // Handle timeline seek (unified for mouse and touch)
+  const handleTimelineInteraction = (e) => {
+    e.preventDefault();
     if (!timelineRef.current || !duration) return;
 
     const rect = timelineRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const newTime = (clickX / rect.width) * duration;
+    const positionX = getEventPosition(e) - rect.left;
+    const newTime = Math.max(
+      0,
+      Math.min((positionX / rect.width) * duration, duration)
+    );
 
     setCurrentTime(newTime);
     syncAudioElements(newTime);
   };
 
-  // Handle timeline drag
+  // Handle timeline drag (mouse and touch)
   const handleTimelineDrag = (e) => {
     if (!isDragging || !timelineRef.current || !duration) return;
+    e.preventDefault();
 
     const rect = timelineRef.current.getBoundingClientRect();
-    const dragX = e.clientX - rect.left;
+    const dragX = getEventPosition(e) - rect.left;
     const newTime = Math.max(
       0,
       Math.min((dragX / rect.width) * duration, duration)
@@ -136,8 +149,9 @@ const CustomAudioPlayer = ({
   };
 
   const startDragging = (e) => {
+    e.preventDefault();
     setIsDragging(true);
-    handleTimelineClick(e);
+    handleTimelineInteraction(e);
   };
 
   const stopDragging = () => {
@@ -145,6 +159,19 @@ const CustomAudioPlayer = ({
       setIsDragging(false);
       syncAudioElements(currentTime);
     }
+  };
+
+  // Touch event handlers
+  const handleTouchStart = (e) => {
+    startDragging(e);
+  };
+
+  const handleTouchMove = (e) => {
+    handleTimelineDrag(e);
+  };
+
+  const handleTouchEnd = () => {
+    stopDragging();
   };
 
   // Handle stem selection
@@ -274,11 +301,14 @@ const CustomAudioPlayer = ({
         <div
           ref={timelineRef}
           className="timeline"
-          onClick={handleTimelineClick}
+          onClick={handleTimelineInteraction}
           onMouseDown={startDragging}
           onMouseMove={handleTimelineDrag}
           onMouseUp={stopDragging}
           onMouseLeave={stopDragging}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           <div className="timeline-track">
             <div
@@ -305,7 +335,6 @@ const CustomAudioPlayer = ({
         </button>
 
         <div className="volume-control">
-          <span>🔊</span>
           <input
             type="range"
             min="0"
