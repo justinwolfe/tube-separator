@@ -1,29 +1,40 @@
 {
   "name": "youtube-downloader",
   "version": "1.0.0",
-  "description": "A simple YouTube downloader app with React frontend and Node.js backend",
+  "description": "Modern YouTube downloader app with React/Vite frontend and Fastify backend",
   "main": "server/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "predev": "npm run kill-ports",
+    "dev": "concurrently \"pnpm run server\" \"pnpm run client\"",
+    "predev": "pnpm run kill-ports",
     "kill-ports": "lsof -ti:3000,7329 | xargs kill -9 2>/dev/null || true",
-    "server": "npm run kill-server-port && cd server && PORT=7329 npm run dev",
+    "server": "pnpm run kill-server-port && cd server && PORT=7329 pnpm run dev",
     "kill-server-port": "lsof -ti:7329 | xargs kill -9 2>/dev/null || true",
-    "client": "npm run kill-client-port && cd client && npm start",
+    "client": "pnpm run kill-client-port && cd client && pnpm run dev",
     "kill-client-port": "lsof -ti:3000 | xargs kill -9 2>/dev/null || true",
-    "build": "cd client && npm run build",
-    "start": "cd server && PORT=7329 npm start",
-    "install-all": "npm install && cd server && npm install && cd ../client && npm install"
+    "build": "cd client && pnpm run build",
+    "start": "cd server && PORT=7329 pnpm start",
+    "install-all": "pnpm install",
+    "clean": "pnpm run clean:deps && pnpm run clean:build",
+    "clean:deps": "rm -rf node_modules client/node_modules server/node_modules",
+    "clean:build": "rm -rf client/dist"
   },
   "keywords": [
     "youtube",
     "downloader",
     "react",
-    "nodejs"
+    "vite",
+    "fastify",
+    "stem-separation"
   ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2"
-  }
+    "concurrently": "^9.0.1"
+  },
+  "packageManager": "pnpm@9.0.0"
 }

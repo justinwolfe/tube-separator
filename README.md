@@ -10,13 +10,15 @@ A modern web application that downloads MP3 audio from YouTube videos and separa
 - 🎧 Built-in audio player for preview
 - 📱 Responsive design for mobile and desktop
 - ⚡ Real-time processing status updates
+- 🚀 Modern tech stack with Vite + Fastify for exceptional performance
+- 📦 Efficient pnpm workspace for fast installs and better dependency management
 
 ## Setup Instructions
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
-- npm or yarn
+- Node.js (v18 or higher)
+- pnpm (v8 or higher) - `npm install -g pnpm`
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed on your system
 - Fadr API key (for stem separation feature)
 
@@ -32,7 +34,7 @@ A modern web application that downloads MP3 audio from YouTube videos and separa
 2. **Install dependencies**
 
    ```bash
-   npm run install-all
+   pnpm install
    ```
 
 3. **Set up environment variables**
@@ -64,25 +66,25 @@ A modern web application that downloads MP3 audio from YouTube videos and separa
 1. **Development mode** (runs both client and server):
 
    ```bash
-   npm run dev
+   pnpm run dev
    ```
 
 2. **Production mode**:
 
    ```bash
-   npm run build
-   npm start
+   pnpm run build
+   pnpm start
    ```
 
 3. **Server only**:
 
    ```bash
-   npm run server
+   pnpm run server
    ```
 
 4. **Client only**:
    ```bash
-   npm run client
+   pnpm run client
    ```
 
 The application will be available at `http://localhost:7329`
@@ -137,10 +139,19 @@ The stem separation feature uses the [Fadr API](https://fadr.com/docs/api-stems-
 
 ## Technical Stack
 
-- **Frontend**: React.js with responsive CSS
-- **Backend**: Node.js with Express
+- **Frontend**: React 18+ with Vite (lightning-fast builds and HMR)
+- **Backend**: Fastify (high-performance Node.js framework, 2-3x faster than Express)
+- **Build Tool**: Vite (next-generation frontend tooling, replaces webpack)
+- **Package Manager**: pnpm (fast, efficient, disk-space friendly)
 - **Audio Processing**: yt-dlp for downloads, Fadr API for stem separation
-- **Environment**: dotenv for configuration management
+- **Environment**: ES modules with dotenv for modern JavaScript standards
+
+### Performance Benefits
+
+- **⚡ Vite**: Sub-second cold starts, instant hot module replacement
+- **🚀 Fastify**: ~65k requests/sec vs ~35k with Express
+- **📦 pnpm**: Up to 2x faster installs, significant disk space savings
+- **🏗️ ES Modules**: Native browser support, better tree-shaking
 
 ## Troubleshooting
 

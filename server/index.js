@@ -1,16 +1,31 @@
-require('dotenv').config({ path: '../.env' });
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const { setTimeout } = require('timers/promises');
+import dotenv from 'dotenv';
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import staticFiles from '@fastify/static';
+import multipart from '@fastify/multipart';
+import axios from 'axios';
+import { spawn } from 'child_process';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { setTimeout } from 'timers/promises';
 
-const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from project root (parent directory)
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
 const PORT = process.env.PORT || 7329;
 const FADR_API_KEY = process.env.FADR_API_KEY;
 const FADR_API_URL = 'https://api.fadr.com';
+
+// Initialize Fastify
+const fastify = Fastify({
+  logger: true,
+  requestTimeout: 300000, // 5 minutes
+  bodyLimit: 104857600, // 100MB
+});
 
 if (!FADR_API_KEY) {
   console.warn(
@@ -18,10 +33,13 @@ if (!FADR_API_KEY) {
   );
 }
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-// app.use(express.static(path.join(__dirname, '../client/build')));
+// Register plugins
+await fastify.register(cors, {
+  origin: true,
+  credentials: true,
+});
+
+await fastify.register(multipart);
 
 // Create downloads directory if it doesn't exist
 const downloadsDir = path.join(__dirname, 'downloads');
@@ -39,7 +57,7 @@ if (!fs.existsSync(metadataDir)) {
 function saveMetadata(filename, data) {
   try {
     const metadataFile = path.join(metadataDir, `${filename}.json`);
-    // Use atomic write to prevent partial writes that might trigger nodemon
+    // Use atomic write to prevent partial writes
     const tempFile = metadataFile + '.tmp';
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2));
     fs.renameSync(tempFile, metadataFile);
@@ -207,11 +225,11 @@ async function downloadStem(assetId, outputPath) {
 }
 
 // Route to get video info
-app.post('/api/video-info', async (req, res) => {
-  const { url } = req.body;
+fastify.post('/api/video-info', async (request, reply) => {
+  const { url } = request.body;
 
   if (!url) {
-    return res.status(400).json({ error: 'URL is required' });
+    return reply.code(400).send({ error: 'URL is required' });
   }
 
   try {
@@ -229,41 +247,49 @@ app.post('/api/video-info', async (req, res) => {
       error += chunk;
     });
 
-    ytdlp.on('close', (code) => {
-      if (code === 0) {
-        try {
-          const videoInfo = JSON.parse(data);
-          res.json({
-            title: videoInfo.title,
-            duration: videoInfo.duration,
-            uploader: videoInfo.uploader,
-            thumbnail: videoInfo.thumbnail,
-            formats:
-              videoInfo.formats?.map((f) => ({
-                format_id: f.format_id,
-                ext: f.ext,
-                quality: f.format_note,
-                filesize: f.filesize,
-              })) || [],
-          });
-        } catch (parseError) {
-          res.status(500).json({ error: 'Failed to parse video info' });
+    return new Promise((resolve) => {
+      ytdlp.on('close', (code) => {
+        if (code === 0) {
+          try {
+            const videoInfo = JSON.parse(data);
+            resolve(
+              reply.send({
+                title: videoInfo.title,
+                duration: videoInfo.duration,
+                uploader: videoInfo.uploader,
+                thumbnail: videoInfo.thumbnail,
+                formats:
+                  videoInfo.formats?.map((f) => ({
+                    format_id: f.format_id,
+                    ext: f.ext,
+                    quality: f.format_note,
+                    filesize: f.filesize,
+                  })) || [],
+              })
+            );
+          } catch (parseError) {
+            resolve(
+              reply.code(500).send({ error: 'Failed to parse video info' })
+            );
+          }
+        } else {
+          resolve(
+            reply.code(400).send({ error: error || 'Failed to get video info' })
+          );
         }
-      } else {
-        res.status(400).json({ error: error || 'Failed to get video info' });
-      }
+      });
     });
   } catch (err) {
-    res.status(500).json({ error: 'Server error: ' + err.message });
+    return reply.code(500).send({ error: 'Server error: ' + err.message });
   }
 });
 
 // Route to download video
-app.post('/api/download', async (req, res) => {
-  const { url, format = 'bestaudio/best' } = req.body;
+fastify.post('/api/download', async (request, reply) => {
+  const { url, format = 'bestaudio/best' } = request.body;
 
   if (!url) {
-    return res.status(400).json({ error: 'URL is required' });
+    return reply.code(400).send({ error: 'URL is required' });
   }
 
   try {
@@ -280,113 +306,121 @@ app.post('/api/download', async (req, res) => {
       infoError += chunk;
     });
 
-    ytdlpInfo.on('close', (infoCode) => {
-      if (infoCode !== 0) {
-        return res
-          .status(400)
-          .json({ error: infoError || 'Failed to get video info' });
-      }
-
-      // Parse video info
-      let videoInfo;
-      try {
-        videoInfo = JSON.parse(videoInfoData);
-      } catch (parseError) {
-        return res.status(500).json({ error: 'Failed to parse video info' });
-      }
-
-      // Generate filename based on video title and timestamp
-      const timestamp = Date.now();
-      const sanitizedTitle = videoInfo.title
-        .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special characters
-        .replace(/\s+/g, '_') // Replace spaces with underscores
-        .substring(0, 50); // Limit length
-      const filename = `${sanitizedTitle}_${timestamp}`;
-
-      // Download video using yt-dlp
-      const ytdlp = spawn('yt-dlp', [
-        '-f',
-        format,
-        '--extract-audio',
-        '--audio-format',
-        'mp3',
-        '-o',
-        path.join(downloadsDir, `${filename}.%(ext)s`),
-        url,
-      ]);
-
-      let error = '';
-
-      ytdlp.stderr.on('data', (chunk) => {
-        error += chunk;
-      });
-
-      ytdlp.on('close', (code) => {
-        if (code === 0) {
-          // Find the downloaded file
-          const files = fs.readdirSync(downloadsDir);
-          const downloadedFile = files.find((file) =>
-            file.startsWith(filename)
+    return new Promise((resolve) => {
+      ytdlpInfo.on('close', (infoCode) => {
+        if (infoCode !== 0) {
+          return resolve(
+            reply.code(400).send({
+              error: infoError || 'Failed to get video info',
+            })
           );
-
-          if (downloadedFile) {
-            // Save metadata
-            const metadata = {
-              originalUrl: url,
-              title: videoInfo.title,
-              uploader: videoInfo.uploader,
-              duration: videoInfo.duration,
-              thumbnail: videoInfo.thumbnail,
-              downloadedAt: new Date().toISOString(),
-              filename: downloadedFile,
-              stems: [], // Will be populated when stems are separated
-            };
-
-            saveMetadata(downloadedFile, metadata);
-
-            res.json({
-              success: true,
-              filename: downloadedFile,
-              streamUrl: `/api/file/${downloadedFile}`,
-              downloadUrl: `/api/download/${downloadedFile}`,
-              canSeparateStems: !!FADR_API_KEY, // Include stem separation capability
-            });
-          } else {
-            res
-              .status(500)
-              .json({ error: 'Download completed but file not found' });
-          }
-        } else {
-          res.status(400).json({ error: error || 'Download failed' });
         }
+
+        // Parse video info
+        let videoInfo;
+        try {
+          videoInfo = JSON.parse(videoInfoData);
+        } catch (parseError) {
+          return resolve(
+            reply.code(500).send({ error: 'Failed to parse video info' })
+          );
+        }
+
+        // Generate filename based on video title and timestamp
+        const timestamp = Date.now();
+        const sanitizedTitle = videoInfo.title
+          .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special characters
+          .replace(/\s+/g, '_') // Replace spaces with underscores
+          .substring(0, 50); // Limit length
+        const filename = `${sanitizedTitle}_${timestamp}`;
+
+        // Download video using yt-dlp
+        const ytdlp = spawn('yt-dlp', [
+          '-f',
+          format,
+          '--extract-audio',
+          '--audio-format',
+          'mp3',
+          '-o',
+          path.join(downloadsDir, `${filename}.%(ext)s`),
+          url,
+        ]);
+
+        let error = '';
+
+        ytdlp.stderr.on('data', (chunk) => {
+          error += chunk;
+        });
+
+        ytdlp.on('close', (code) => {
+          if (code === 0) {
+            // Find the downloaded file
+            const files = fs.readdirSync(downloadsDir);
+            const downloadedFile = files.find((file) =>
+              file.startsWith(filename)
+            );
+
+            if (downloadedFile) {
+              // Save metadata
+              const metadata = {
+                originalUrl: url,
+                title: videoInfo.title,
+                uploader: videoInfo.uploader,
+                duration: videoInfo.duration,
+                thumbnail: videoInfo.thumbnail,
+                downloadedAt: new Date().toISOString(),
+                filename: downloadedFile,
+                stems: [], // Will be populated when stems are separated
+              };
+
+              saveMetadata(downloadedFile, metadata);
+
+              resolve(
+                reply.send({
+                  success: true,
+                  filename: downloadedFile,
+                  streamUrl: `/api/file/${downloadedFile}`,
+                  downloadUrl: `/api/download/${downloadedFile}`,
+                  canSeparateStems: !!FADR_API_KEY, // Include stem separation capability
+                })
+              );
+            } else {
+              resolve(
+                reply.code(500).send({
+                  error: 'Download completed but file not found',
+                })
+              );
+            }
+          } else {
+            resolve(
+              reply.code(400).send({ error: error || 'Download failed' })
+            );
+          }
+        });
       });
     });
   } catch (err) {
-    res.status(500).json({ error: 'Server error: ' + err.message });
+    return reply.code(500).send({ error: 'Server error: ' + err.message });
   }
 });
 
 // Route to separate stems using Fadr API
-app.post('/api/separate-stems', async (req, res) => {
-  const { filename } = req.body;
+fastify.post('/api/separate-stems', async (request, reply) => {
+  const { filename } = request.body;
 
   if (!filename) {
-    return res.status(400).json({ error: 'Filename is required' });
+    return reply.code(400).send({ error: 'Filename is required' });
   }
 
   if (!FADR_API_KEY) {
-    return res.status(400).json({ error: 'Fadr API key not configured' });
+    return reply.code(400).send({ error: 'Fadr API key not configured' });
   }
 
   const filePath = path.join(downloadsDir, filename);
 
   if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
+    return reply.code(404).send({ error: 'File not found' });
   }
-
-  // Set a longer timeout for this route
-  req.setTimeout(300000); // 5 minutes
-  res.setTimeout(300000); // 5 minutes
 
   try {
     console.log('🎵 Starting stem separation for:', filename);
@@ -405,8 +439,6 @@ app.post('/api/separate-stems', async (req, res) => {
     console.log('⏳ Waiting for stem separation to complete...');
     const completedTask = await pollTaskStatus(task._id);
     console.log('✅ Stem separation completed');
-
-    // Skip musical analysis - not reliable
 
     // Step 5: Get stem assets
     console.log('📥 Getting stem information...');
@@ -448,7 +480,7 @@ app.post('/api/separate-stems', async (req, res) => {
       saveMetadata(filename, existingMetadata);
     }
 
-    res.json({
+    return reply.send({
       success: true,
       originalFile: filename,
       stems: stemsInfo,
@@ -456,7 +488,7 @@ app.post('/api/separate-stems', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error in stem separation:', error);
-    res.status(500).json({
+    return reply.code(500).send({
       error:
         'Stem separation failed: ' +
         (error.response?.data?.error || error.message),
@@ -465,14 +497,14 @@ app.post('/api/separate-stems', async (req, res) => {
 });
 
 // Route to serve downloaded files (for streaming/playing)
-app.get('/api/file/:filename', (req, res) => {
-  const filename = req.params.filename;
+fastify.get('/api/file/:filename', async (request, reply) => {
+  const filename = request.params.filename;
   const filePath = path.join(downloadsDir, filename);
 
   if (fs.existsSync(filePath)) {
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
-    const range = req.headers.range;
+    const range = request.headers.range;
 
     // Support range requests for audio streaming
     if (range) {
@@ -482,41 +514,45 @@ app.get('/api/file/:filename', (req, res) => {
 
       const chunksize = end - start + 1;
       const file = fs.createReadStream(filePath, { start, end });
-      const head = {
+
+      reply.headers({
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize,
         'Content-Type': 'audio/mpeg',
-      };
-      res.writeHead(206, head);
-      file.pipe(res);
+      });
+      reply.code(206);
+      return reply.send(file);
     } else {
-      const head = {
+      reply.headers({
         'Content-Length': fileSize,
         'Content-Type': 'audio/mpeg',
-      };
-      res.writeHead(200, head);
-      fs.createReadStream(filePath).pipe(res);
+      });
+      return reply.send(fs.createReadStream(filePath));
     }
   } else {
-    res.status(404).json({ error: 'File not found' });
+    return reply.code(404).send({ error: 'File not found' });
   }
 });
 
 // Route to download files (force download)
-app.get('/api/download/:filename', (req, res) => {
-  const filename = req.params.filename;
+fastify.get('/api/download/:filename', async (request, reply) => {
+  const filename = request.params.filename;
   const filePath = path.join(downloadsDir, filename);
 
   if (fs.existsSync(filePath)) {
-    res.download(filePath);
+    reply.headers({
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Type': 'audio/mpeg',
+    });
+    return reply.send(fs.createReadStream(filePath));
   } else {
-    res.status(404).json({ error: 'File not found' });
+    return reply.code(404).send({ error: 'File not found' });
   }
 });
 
 // Route to get saved files with metadata
-app.get('/api/saved-files', (req, res) => {
+fastify.get('/api/saved-files', async (request, reply) => {
   try {
     const files = fs.readdirSync(downloadsDir);
 
@@ -588,15 +624,15 @@ app.get('/api/saved-files', (req, res) => {
         (a, b) => new Date(b.original.created) - new Date(a.original.created)
       ); // Sort by newest first
 
-    res.json(savedFiles);
+    return reply.send(savedFiles);
   } catch (err) {
     console.error('Error getting saved files:', err);
-    res.status(500).json({ error: 'Failed to get saved files' });
+    return reply.code(500).send({ error: 'Failed to get saved files' });
   }
 });
 
 // Route to list downloaded files
-app.get('/api/downloads', (req, res) => {
+fastify.get('/api/downloads', async (request, reply) => {
   try {
     const files = fs.readdirSync(downloadsDir);
     const fileList = files.map((file) => {
@@ -608,24 +644,27 @@ app.get('/api/downloads', (req, res) => {
         created: stats.birthtime,
       };
     });
-    res.json(fileList);
+    return reply.send(fileList);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to list downloads' });
+    return reply.code(500).send({ error: 'Failed to list downloads' });
   }
 });
 
-// Serve React app for any non-API routes (disabled for development)
-// app.get('*', (req, res) => {
-//   res.sendFile(path.join(__dirname, '../client/build/index.html'));
-// });
+// Start server
+try {
+  await fastify.listen({
+    port: PORT,
+    host: '0.0.0.0',
+  });
 
-// Start server on all interfaces (0.0.0.0) to allow local network access
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+  console.log(`🚀 Fastify server running on http://0.0.0.0:${PORT}`);
   console.log(`📱 Access from local network at http://[YOUR_LOCAL_IP]:${PORT}`);
   if (FADR_API_KEY) {
     console.log('🎵 Fadr API integration enabled - stem separation available');
   } else {
     console.log('⚠️  Fadr API key not configured - stem separation disabled');
   }
-});
+} catch (err) {
+  fastify.log.error(err);
+  process.exit(1);
+}
