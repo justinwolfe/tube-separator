@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import './App.css';
+import CustomAudioPlayer from './CustomAudioPlayer';
 
 function App() {
   const [activeTab, setActiveTab] = useState('main');
@@ -279,14 +280,12 @@ function MainView({
           </div>
 
           <div className="player-section">
-            <audio
-              controls
-              preload="metadata"
-              className="audio-player"
-              src={extractionResult.streamUrl}
-            >
-              Your browser does not support the audio element.
-            </audio>
+            <CustomAudioPlayer
+              originalTrack={extractionResult.streamUrl}
+              stems={extractionResult.stems || []}
+              title="AUDIO PLAYER"
+              className="main-player"
+            />
           </div>
 
           {extractionResult.processingStems && (
@@ -295,31 +294,6 @@ function MainView({
                 <div className="progress-fill"></div>
               </div>
               <p>Processing with AI... This may take 30-60 seconds</p>
-            </div>
-          )}
-
-          {extractionResult.stems && extractionResult.stems.length > 0 && (
-            <div className="stems-section">
-              <h4>ISOLATED STEMS</h4>
-              <div className="stems-grid">
-                {extractionResult.stems.map((stem, index) => (
-                  <div key={index} className="stem-item">
-                    <div className="stem-header">
-                      <h5>{getStemDisplayName(stem.type).toUpperCase()}</h5>
-                    </div>
-                    <div className="stem-controls">
-                      <audio
-                        controls
-                        preload="metadata"
-                        className="stem-player"
-                        src={stem.streamUrl}
-                      >
-                        Your browser does not support the audio element.
-                      </audio>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>
@@ -428,46 +402,12 @@ function SavedFileItem({ fileGroup, formatDuration, getStemDisplayName }) {
 
       {expanded && (
         <div className="saved-file-content">
-          {/* Original File */}
-          <div className="saved-original">
-            <h4>ORIGINAL AUDIO</h4>
-            <div className="saved-audio-section">
-              <audio
-                controls
-                preload="metadata"
-                className="saved-audio-player"
-                src={original.streamUrl}
-              >
-                Your browser does not support the audio element.
-              </audio>
-            </div>
-          </div>
-
-          {/* Stems */}
-          {stems.length > 0 && (
-            <div className="saved-stems">
-              <h4>ISOLATED STEMS</h4>
-              <div className="saved-stems-grid">
-                {stems.map((stem, stemIndex) => (
-                  <div key={stemIndex} className="saved-stem-item">
-                    <div className="saved-stem-header">
-                      <h5>{getStemDisplayName(stem.type).toUpperCase()}</h5>
-                    </div>
-                    <div className="saved-stem-controls">
-                      <audio
-                        controls
-                        preload="metadata"
-                        className="saved-stem-player"
-                        src={stem.streamUrl}
-                      >
-                        Your browser does not support the audio element.
-                      </audio>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <CustomAudioPlayer
+            originalTrack={original.streamUrl}
+            stems={stems}
+            title={metadata?.title || original.filename}
+            className="saved-player"
+          />
         </div>
       )}
     </div>

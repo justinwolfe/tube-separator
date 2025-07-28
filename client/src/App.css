@@ -275,6 +275,7 @@
   padding: 0;
 }
 
+/* Replaced by CustomAudioPlayer
 .audio-player {
   width: 100%;
   height: 50px;
@@ -282,7 +283,9 @@
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+*/
 
+/* Replaced by CustomAudioPlayer
 .stems-section {
   margin-top: 50px;
   padding: 40px;
@@ -298,6 +301,7 @@
   letter-spacing: 3px;
   text-transform: uppercase;
 }
+*/
 
 .stem-progress {
   margin-top: 30px;
@@ -400,6 +404,7 @@
   flex-direction: column;
 }
 
+/* Replaced by CustomAudioPlayer
 .stem-player {
   width: 100%;
   height: 40px;
@@ -407,6 +412,7 @@
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
+*/
 
 /* Mobile responsive */
 @media (max-width: 768px) {
@@ -685,6 +691,7 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+/* Replaced by CustomAudioPlayer
 .saved-audio-section {
   display: flex;
   flex-direction: column;
@@ -699,7 +706,9 @@
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
+*/
 
+/* Replaced by CustomAudioPlayer
 .saved-stems-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -718,7 +727,9 @@
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.02);
 }
+*/
 
+/* Replaced by CustomAudioPlayer
 .saved-stem-header h5 {
   margin: 0 0 16px 0;
   font-size: 0.75rem;
@@ -732,6 +743,7 @@
   display: flex;
   flex-direction: column;
 }
+*/
 
 /* Mobile responsive for saved view */
 @media (max-width: 768px) {
