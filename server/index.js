@@ -87,6 +87,40 @@ function getBaseFilename(filename) {
   );
 }
 
+// Helper function to normalize YouTube URLs (including mobile URLs)
+function normalizeYouTubeUrl(url) {
+  try {
+    const urlObj = new URL(url);
+
+    // Handle mobile YouTube URLs (m.youtube.com)
+    if (urlObj.hostname === 'm.youtube.com') {
+      urlObj.hostname = 'www.youtube.com';
+      return urlObj.toString();
+    }
+
+    // Handle youtu.be short URLs
+    if (urlObj.hostname === 'youtu.be') {
+      const videoId = urlObj.pathname.slice(1); // Remove leading slash
+      const params = new URLSearchParams(urlObj.search);
+      params.set('v', videoId);
+      return `https://www.youtube.com/watch?${params.toString()}`;
+    }
+
+    // For regular YouTube URLs, ensure they use www.youtube.com
+    if (urlObj.hostname === 'youtube.com') {
+      urlObj.hostname = 'www.youtube.com';
+      return urlObj.toString();
+    }
+
+    // Return original URL if it's already in correct format or not a YouTube URL
+    return url;
+  } catch (error) {
+    // If URL parsing fails, return original URL
+    console.warn('Failed to parse URL:', url, error.message);
+    return url;
+  }
+}
+
 // Helper function for Fadr API requests
 const fadrApiHeaders = {
   Authorization: `Bearer ${FADR_API_KEY}`,
@@ -233,8 +267,15 @@ fastify.post('/api/video-info', async (request, reply) => {
   }
 
   try {
+    // Normalize the URL to handle mobile YouTube links and other formats
+    const normalizedUrl = normalizeYouTubeUrl(url);
+
     // Get video info using yt-dlp
-    const ytdlp = spawn('yt-dlp', ['--dump-json', '--no-download', url]);
+    const ytdlp = spawn('yt-dlp', [
+      '--dump-json',
+      '--no-download',
+      normalizedUrl,
+    ]);
 
     let data = '';
     let error = '';
@@ -293,8 +334,15 @@ fastify.post('/api/download', async (request, reply) => {
   }
 
   try {
+    // Normalize the URL to handle mobile YouTube links and other formats
+    const normalizedUrl = normalizeYouTubeUrl(url);
+
     // First get video info to store metadata
-    const ytdlpInfo = spawn('yt-dlp', ['--dump-json', '--no-download', url]);
+    const ytdlpInfo = spawn('yt-dlp', [
+      '--dump-json',
+      '--no-download',
+      normalizedUrl,
+    ]);
     let videoInfoData = '';
     let infoError = '';
 
@@ -343,7 +391,7 @@ fastify.post('/api/download', async (request, reply) => {
           'mp3',
           '-o',
           path.join(downloadsDir, `${filename}.%(ext)s`),
-          url,
+          normalizedUrl,
         ]);
 
         let error = '';
