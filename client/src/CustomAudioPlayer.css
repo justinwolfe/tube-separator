@@ -56,7 +56,8 @@
   height: 100%;
   background: rgba(255, 255, 255, 0.6);
   border-radius: 0;
-  transition: width 0.1s ease;
+  will-change: width;
+  transform: translateZ(0);
 }
 
 .timeline-handle {
@@ -67,9 +68,10 @@
   background: #ffffff;
   border-radius: 0;
   transform: translate(-50%, -50%);
-  transition: left 0.1s ease;
   cursor: grab;
   opacity: 0.8;
+  will-change: left;
+  transform: translate(-50%, -50%) translateZ(0);
 }
 
 .timeline-handle:active {
@@ -286,6 +288,9 @@
   .timeline {
     padding: 30px 0;
     height: 60px;
+    /* Additional mobile performance optimizations */
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 
   .timeline-track {
@@ -295,7 +300,7 @@
   .timeline-handle {
     width: 12px;
     height: 12px;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) translateZ(0);
   }
 
   .timeline-container {

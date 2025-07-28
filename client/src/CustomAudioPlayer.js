@@ -14,11 +14,16 @@ const CustomAudioPlayer = ({
   const [activeStem, setActiveStem] = useState('original');
   const [stemVolumes, setStemVolumes] = useState({});
   const [isDragging, setIsDragging] = useState(false);
+  const [dragTime, setDragTime] = useState(0);
 
   // Audio refs
   const originalAudioRef = useRef(null);
   const stemAudioRefs = useRef({});
   const timelineRef = useRef(null);
+
+  // Performance refs
+  const animationFrameRef = useRef(null);
+  const lastUpdateTimeRef = useRef(0);
 
   // Initialize stem volumes
   useEffect(() => {
@@ -117,49 +122,87 @@ const CustomAudioPlayer = ({
     return e.clientX;
   };
 
-  // Handle timeline seek (unified for mouse and touch)
-  const handleTimelineInteraction = (e) => {
+  // Calculate time from position
+  const getTimeFromPosition = useCallback(
+    (positionX, rect) => {
+      const percentage = Math.max(0, Math.min(positionX / rect.width, 1));
+      return percentage * duration;
+    },
+    [duration]
+  );
+
+  // Throttled visual update using requestAnimationFrame
+  const updateTimelineVisually = useCallback((newTime) => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    animationFrameRef.current = requestAnimationFrame(() => {
+      setDragTime(newTime);
+    });
+  }, []);
+
+  // Handle timeline click (immediate audio seek)
+  const handleTimelineClick = (e) => {
+    if (isDragging) return; // Don't handle clicks during drag
     e.preventDefault();
     if (!timelineRef.current || !duration) return;
 
     const rect = timelineRef.current.getBoundingClientRect();
     const positionX = getEventPosition(e) - rect.left;
-    const newTime = Math.max(
-      0,
-      Math.min((positionX / rect.width) * duration, duration)
-    );
+    const newTime = getTimeFromPosition(positionX, rect);
 
     setCurrentTime(newTime);
+    setDragTime(newTime);
     syncAudioElements(newTime);
   };
 
-  // Handle timeline drag (mouse and touch)
+  // Handle timeline drag (visual updates only, throttled)
   const handleTimelineDrag = (e) => {
     if (!isDragging || !timelineRef.current || !duration) return;
     e.preventDefault();
 
+    const now = performance.now();
+    if (now - lastUpdateTimeRef.current < 16) return; // Throttle to ~60fps
+    lastUpdateTimeRef.current = now;
+
     const rect = timelineRef.current.getBoundingClientRect();
     const dragX = getEventPosition(e) - rect.left;
-    const newTime = Math.max(
-      0,
-      Math.min((dragX / rect.width) * duration, duration)
-    );
+    const newTime = getTimeFromPosition(dragX, rect);
 
-    setCurrentTime(newTime);
+    // Only update visual state during drag, not audio
+    updateTimelineVisually(newTime);
   };
 
   const startDragging = (e) => {
     e.preventDefault();
+    if (!timelineRef.current || !duration) return;
+
     setIsDragging(true);
-    handleTimelineInteraction(e);
+    const rect = timelineRef.current.getBoundingClientRect();
+    const positionX = getEventPosition(e) - rect.left;
+    const newTime = getTimeFromPosition(positionX, rect);
+
+    setDragTime(newTime);
+    updateTimelineVisually(newTime);
   };
 
-  const stopDragging = () => {
+  const stopDragging = useCallback(() => {
     if (isDragging) {
       setIsDragging(false);
-      syncAudioElements(currentTime);
+
+      // Cancel any pending animation frame
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+
+      // Sync audio to final position
+      const finalTime = dragTime;
+      setCurrentTime(finalTime);
+      syncAudioElements(finalTime);
     }
-  };
+  }, [isDragging, dragTime, syncAudioElements]);
 
   // Touch event handlers
   const handleTouchStart = (e) => {
@@ -173,6 +216,15 @@ const CustomAudioPlayer = ({
   const handleTouchEnd = () => {
     stopDragging();
   };
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   // Handle stem selection
   const handleStemToggle = async (stemType) => {
@@ -264,8 +316,9 @@ const CustomAudioPlayer = ({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Calculate progress percentage
-  const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
+  // Calculate progress percentage (use dragTime during drag, currentTime otherwise)
+  const displayTime = isDragging ? dragTime : currentTime;
+  const progressPercentage = duration > 0 ? (displayTime / duration) * 100 : 0;
 
   return (
     <div className={`custom-audio-player ${className}`}>
@@ -301,7 +354,7 @@ const CustomAudioPlayer = ({
         <div
           ref={timelineRef}
           className="timeline"
-          onClick={handleTimelineInteraction}
+          onClick={handleTimelineClick}
           onMouseDown={startDragging}
           onMouseMove={handleTimelineDrag}
           onMouseUp={stopDragging}
@@ -323,7 +376,7 @@ const CustomAudioPlayer = ({
         </div>
 
         <div className="time-display">
-          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(displayTime)}</span>
           <span>{formatTime(duration)}</span>
         </div>
       </div>
