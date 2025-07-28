@@ -452,6 +452,142 @@ fastify.post('/api/download', async (request, reply) => {
   }
 });
 
+// Route to upload and process video file
+fastify.post('/api/upload', async (request, reply) => {
+  try {
+    const data = await request.file();
+
+    if (!data) {
+      return reply.code(400).send({ error: 'No file uploaded' });
+    }
+
+    // Check file type
+    const allowedTypes = [
+      'video/mp4',
+      'video/avi',
+      'video/mov',
+      'video/mkv',
+      'video/webm',
+      'audio/mp3',
+      'audio/wav',
+      'audio/m4a',
+    ];
+    if (!allowedTypes.includes(data.mimetype)) {
+      return reply.code(400).send({
+        error: 'Invalid file type. Please upload a video or audio file.',
+      });
+    }
+
+    // Generate filename
+    const timestamp = Date.now();
+    const originalName = data.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const baseFilename = `upload_${timestamp}_${originalName}`;
+    const tempFilePath = path.join(downloadsDir, baseFilename);
+
+    // Save uploaded file
+    const buffer = await data.toBuffer();
+    fs.writeFileSync(tempFilePath, buffer);
+
+    // Extract audio using ffmpeg
+    const outputFilename = `${path.parse(baseFilename).name}.mp3`;
+    const outputPath = path.join(downloadsDir, outputFilename);
+
+    return new Promise((resolve) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-i',
+        tempFilePath,
+        '-vn', // no video
+        '-acodec',
+        'mp3',
+        '-ab',
+        '192k',
+        '-ar',
+        '44100',
+        '-y', // overwrite output files
+        outputPath,
+      ]);
+
+      let error = '';
+
+      ffmpeg.stderr.on('data', (chunk) => {
+        error += chunk;
+      });
+
+      ffmpeg.on('close', (code) => {
+        // Clean up temporary file
+        try {
+          fs.unlinkSync(tempFilePath);
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup temp file:', cleanupError);
+        }
+
+        if (code === 0) {
+          // Get audio file info using ffprobe
+          const ffprobe = spawn('ffprobe', [
+            '-v',
+            'quiet',
+            '-print_format',
+            'json',
+            '-show_format',
+            outputPath,
+          ]);
+
+          let probeData = '';
+          ffprobe.stdout.on('data', (chunk) => {
+            probeData += chunk;
+          });
+
+          ffprobe.on('close', (probeCode) => {
+            let duration = null;
+            if (probeCode === 0 && probeData) {
+              try {
+                const probeInfo = JSON.parse(probeData);
+                duration = parseFloat(probeInfo.format.duration);
+              } catch (parseError) {
+                console.warn('Failed to parse ffprobe output:', parseError);
+              }
+            }
+
+            // Save metadata
+            const metadata = {
+              originalFilename: data.filename,
+              uploadedAt: new Date().toISOString(),
+              filename: outputFilename,
+              duration: duration,
+              title: data.filename.replace(/\.[^/.]+$/, ''), // Remove extension
+              stems: [],
+              isUploaded: true,
+            };
+
+            saveMetadata(outputFilename, metadata);
+
+            resolve(
+              reply.send({
+                success: true,
+                filename: outputFilename,
+                streamUrl: `/api/file/${outputFilename}`,
+                downloadUrl: `/api/download/${outputFilename}`,
+                canSeparateStems: !!FADR_API_KEY,
+                title: metadata.title,
+                duration: duration,
+              })
+            );
+          });
+        } else {
+          resolve(
+            reply.code(500).send({
+              error:
+                'Failed to extract audio from video file. Make sure the file contains audio.',
+            })
+          );
+        }
+      });
+    });
+  } catch (err) {
+    return reply.code(500).send({ error: 'Upload failed: ' + err.message });
+  }
+});
+
 // Route to separate stems using Fadr API
 fastify.post('/api/separate-stems', async (request, reply) => {
   const { filename } = request.body;

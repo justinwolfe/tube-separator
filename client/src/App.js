@@ -14,6 +14,8 @@ function App() {
   const [separatingStems, setSeparatingStems] = useState(false);
   const [savedFiles, setSavedFiles] = useState([]);
   const [savedFilesLoading, setSavedFilesLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const loadSavedFiles = async () => {
     setSavedFilesLoading(true);
@@ -130,6 +132,102 @@ function App() {
     }
   };
 
+  const handleUpload = async (file) => {
+    setUploading(true);
+    setSeparatingStems(true);
+    setError('');
+    setExtractionResult(null);
+    setUploadProgress(0);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Upload and extract audio
+      const uploadResponse = await axios.post('/api/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round(
+            (progressEvent.loaded / progressEvent.total) * 100
+          );
+          setUploadProgress(progress);
+        },
+      });
+
+      const uploadData = uploadResponse.data;
+
+      // Set video info for uploaded file
+      setVideoInfo({
+        title: uploadData.title,
+        duration: uploadData.duration,
+        uploader: 'uploaded file',
+      });
+
+      // Update extraction result with upload
+      setExtractionResult({
+        ...uploadData,
+        stems: [],
+        processingStems: true,
+      });
+
+      setUploading(false);
+
+      // If stem separation is available, automatically start it
+      if (uploadData.canSeparateStems) {
+        try {
+          const stemsResponse = await axios.post(
+            '/api/separate-stems',
+            {
+              filename: uploadData.filename,
+            },
+            {
+              timeout: 300000, // 5 minutes timeout
+            }
+          );
+
+          // Update with stems data
+          setExtractionResult((prev) => ({
+            ...prev,
+            stems: stemsResponse.data.stems,
+            processingStems: false,
+          }));
+        } catch (stemsErr) {
+          console.error('Stem separation error:', stemsErr);
+          let errorMessage =
+            'audio extracted successfully, but stem separation failed';
+
+          if (stemsErr.code === 'ECONNABORTED') {
+            errorMessage +=
+              ': request timed out. the server may be processing your request.';
+          } else if (stemsErr.response?.data?.error) {
+            errorMessage += ': ' + stemsErr.response.data.error;
+          } else {
+            errorMessage += ': ' + stemsErr.message;
+          }
+
+          setError(errorMessage);
+          setExtractionResult((prev) => ({
+            ...prev,
+            processingStems: false,
+          }));
+        }
+      } else {
+        setExtractionResult((prev) => ({
+          ...prev,
+          processingStems: false,
+        }));
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || 'upload failed');
+      setUploading(false);
+    } finally {
+      setSeparatingStems(false);
+      setUploadProgress(0);
+    }
+  };
+
   const formatDuration = (seconds) => {
     if (!seconds) return 'unknown duration';
     const mins = Math.floor(seconds / 60);
@@ -168,6 +266,12 @@ function App() {
             download
           </button>
           <button
+            className={`tab-button ${activeTab === 'upload' ? 'active' : ''}`}
+            onClick={() => handleTabChange('upload')}
+          >
+            upload
+          </button>
+          <button
             className={`tab-button ${activeTab === 'saved' ? 'active' : ''}`}
             onClick={() => handleTabChange('saved')}
           >
@@ -188,6 +292,18 @@ function App() {
             extractionResult={extractionResult}
             handleGetInfo={handleGetInfo}
             handleDownload={handleDownload}
+            formatDuration={formatDuration}
+            getStemDisplayName={getStemDisplayName}
+          />
+        ) : activeTab === 'upload' ? (
+          <UploadView
+            videoInfo={videoInfo}
+            uploading={uploading}
+            uploadProgress={uploadProgress}
+            separatingStems={separatingStems}
+            error={error}
+            extractionResult={extractionResult}
+            handleUpload={handleUpload}
             formatDuration={formatDuration}
             getStemDisplayName={getStemDisplayName}
           />
@@ -342,6 +458,174 @@ function SavedView({
         />
       ))}
     </div>
+  );
+}
+
+// Upload tab component
+function UploadView({
+  videoInfo,
+  uploading,
+  uploadProgress,
+  separatingStems,
+  error,
+  extractionResult,
+  handleUpload,
+  formatDuration,
+  getStemDisplayName,
+}) {
+  const [dragActive, setDragActive] = useState(false);
+
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileSelect = (file) => {
+    // Check file type
+    const allowedTypes = [
+      'video/mp4',
+      'video/avi',
+      'video/mov',
+      'video/mkv',
+      'video/webm',
+      'audio/mp3',
+      'audio/wav',
+      'audio/m4a',
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert(
+        'Please select a video or audio file (MP4, AVI, MOV, MKV, WebM, MP3, WAV, M4A)'
+      );
+      return;
+    }
+
+    // Check file size (limit to 100MB)
+    if (file.size > 100 * 1024 * 1024) {
+      alert('File size must be less than 100MB');
+      return;
+    }
+
+    handleUpload(file);
+  };
+
+  const disabled = uploading || separatingStems;
+
+  return (
+    <>
+      {!extractionResult ? (
+        <div className="upload-section">
+          <div
+            className={`upload-zone ${dragActive ? 'drag-active' : ''} ${
+              disabled ? 'disabled' : ''
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <div className="upload-content">
+              <div className="upload-icon">📁</div>
+              <h3>upload video or audio file</h3>
+              <p>drag and drop a file here, or click to browse</p>
+              <p className="upload-formats">
+                supported: MP4, AVI, MOV, MKV, WebM, MP3, WAV, M4A
+              </p>
+              <p className="upload-limit">max file size: 100MB</p>
+
+              <input
+                type="file"
+                id="file-upload"
+                className="file-input"
+                accept="video/*,audio/*"
+                onChange={(e) => {
+                  if (e.target.files[0]) {
+                    handleFileSelect(e.target.files[0]);
+                  }
+                }}
+                disabled={disabled}
+              />
+              <label htmlFor="file-upload" className="upload-btn">
+                {uploading ? 'uploading...' : 'choose file'}
+              </label>
+            </div>
+          </div>
+
+          {uploading && (
+            <div className="upload-progress">
+              <div className="progress-bar">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+              <p>uploading file... {uploadProgress}%</p>
+            </div>
+          )}
+
+          {separatingStems && !uploading && (
+            <div className="processing-section">
+              <div className="progress-bar">
+                <div className="progress-fill"></div>
+              </div>
+              <p>
+                extracting audio and separating stems...this may take 30-60
+                seconds
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="upload-result">
+          {videoInfo && (
+            <div className="video-info">
+              <div className="video-details">
+                <div className="details">
+                  <h3>{videoInfo.title}</h3>
+                  <p className="uploader">{videoInfo.uploader}</p>
+                  <p className="duration">
+                    {formatDuration(videoInfo.duration)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="player-section">
+            <CustomAudioPlayer
+              originalTrack={extractionResult.streamUrl}
+              stems={extractionResult.stems || []}
+              className="main-player"
+            />
+            {extractionResult.processingStems && (
+              <div className="stem-progress">
+                <div className="progress-bar">
+                  <div className="progress-fill"></div>
+                </div>
+                <p>separating stems via fadr...this may take 30-60 seconds</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {error && <div className="error-message">{error}</div>}
+    </>
   );
 }
 

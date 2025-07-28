@@ -806,3 +806,178 @@
     gap: 15px;
   }
 }
+
+/* Upload View Styles */
+.upload-section {
+  margin-bottom: 60px;
+}
+
+.upload-zone {
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 80px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.upload-zone:hover:not(.disabled) {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.upload-zone.drag-active {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.05);
+  transform: scale(1.02);
+}
+
+.upload-zone.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.upload-icon {
+  font-size: 4rem;
+  opacity: 0.6;
+  margin-bottom: 10px;
+}
+
+.upload-content h3 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 300;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.upload-content p {
+  margin: 0;
+  opacity: 0.6;
+  font-size: 0.9rem;
+  font-weight: 300;
+  letter-spacing: 0.5px;
+}
+
+.upload-formats {
+  font-size: 0.8rem !important;
+  opacity: 0.4 !important;
+  margin-top: 10px !important;
+}
+
+.upload-limit {
+  font-size: 0.8rem !important;
+  opacity: 0.4 !important;
+}
+
+.file-input {
+  display: none;
+}
+
+.upload-btn {
+  padding: 16px 40px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  margin-top: 20px;
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.upload-btn:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.upload-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+.upload-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.upload-progress {
+  margin-top: 30px;
+  padding: 30px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.upload-progress .progress-bar {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  margin-bottom: 20px;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+.upload-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.8),
+    rgba(255, 255, 255, 0.4)
+  );
+  transition: width 0.3s ease;
+  border-radius: 0;
+}
+
+.upload-progress p {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.6;
+  font-weight: 300;
+  letter-spacing: 0.5px;
+}
+
+.upload-result {
+  margin-top: 40px;
+}
+
+@media (max-width: 768px) {
+  .upload-zone {
+    padding: 60px 20px;
+  }
+
+  .upload-content h3 {
+    font-size: 1.2rem;
+  }
+
+  .upload-icon {
+    font-size: 3rem;
+  }
+}
