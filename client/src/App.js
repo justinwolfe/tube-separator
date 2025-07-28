@@ -242,7 +242,7 @@ function App() {
       bass: 'Bass',
       melodies: 'Melodies',
       instrumental: 'Instrumental',
-      other: 'Other',
+      other: 'Instrumental w/o Drums',
     };
     return (
       names[stemType] || stemType.charAt(0).toUpperCase() + stemType.slice(1)
@@ -254,7 +254,6 @@ function App() {
       <div className="container">
         <header className="header">
           <h1>tube-splitter</h1>
-          <p>download • isolate • transform</p>
         </header>
 
         {/* Tab Navigation */}
@@ -341,7 +340,7 @@ function MainView({
         <div className="input-group">
           <input
             type="url"
-            placeholder="enter youtube url..."
+            placeholder="enter video url..."
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             className="url-input"
