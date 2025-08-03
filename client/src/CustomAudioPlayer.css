@@ -275,3 +275,117 @@
 .saved-player .player-header {
   display: none;
 }
+
+/* Transcript Styles */
+.transcript-section {
+  margin-top: 40px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 30px;
+}
+
+.transcript-header {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.transcript-toggle {
+  padding: 12px 30px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+}
+
+.transcript-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.transcript-toggle.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.transcript-content {
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 30px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.transcript-words {
+  line-height: 1.8;
+  font-size: 0.9rem;
+  font-weight: 300;
+}
+
+.transcript-word {
+  display: inline;
+  padding: 2px 4px;
+  margin: 0 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 3px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.transcript-word:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.transcript-word.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-weight: 400;
+}
+
+.transcript-text {
+  line-height: 1.8;
+  font-size: 0.9rem;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+}
+
+/* Custom scrollbar for transcript */
+.transcript-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.transcript-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.transcript-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.transcript-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Mobile responsive for transcript */
+@media (max-width: 768px) {
+  .transcript-content {
+    padding: 20px;
+    max-height: 250px;
+  }
+
+  .transcript-words {
+    font-size: 0.85rem;
+  }
+
+  .transcript-word {
+    padding: 3px 6px;
+    margin: 1px 1px;
+  }
+}

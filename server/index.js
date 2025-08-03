@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { setTimeout } from 'timers/promises';
+import OpenAI from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,7 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 const PORT = process.env.PORT || 7329;
 const FADR_API_KEY = process.env.FADR_API_KEY;
 const FADR_API_URL = 'https://api.fadr.com';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // Initialize Fastify
 const fastify = Fastify({
@@ -30,6 +32,18 @@ const fastify = Fastify({
 if (!FADR_API_KEY) {
   console.warn(
     '⚠️  Warning: FADR_API_KEY not found in environment variables. Stem separation will not work.'
+  );
+}
+
+// Initialize OpenAI
+let openai = null;
+if (OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: OPENAI_API_KEY,
+  });
+} else {
+  console.warn(
+    '⚠️  Warning: OPENAI_API_KEY not found in environment variables. Transcript generation will not work.'
   );
 }
 
@@ -430,6 +444,7 @@ fastify.post('/api/download', async (request, reply) => {
                   streamUrl: `/api/file/${downloadedFile}`,
                   downloadUrl: `/api/download/${downloadedFile}`,
                   canSeparateStems: !!FADR_API_KEY, // Include stem separation capability
+                  canGenerateTranscript: !!OPENAI_API_KEY, // Include transcript generation capability
                 })
               );
             } else {
@@ -568,6 +583,7 @@ fastify.post('/api/upload', async (request, reply) => {
                 streamUrl: `/api/file/${outputFilename}`,
                 downloadUrl: `/api/download/${outputFilename}`,
                 canSeparateStems: !!FADR_API_KEY,
+                canGenerateTranscript: !!OPENAI_API_KEY,
                 title: metadata.title,
                 duration: duration,
               })
@@ -585,6 +601,93 @@ fastify.post('/api/upload', async (request, reply) => {
     });
   } catch (err) {
     return reply.code(500).send({ error: 'Upload failed: ' + err.message });
+  }
+});
+
+// Route to generate transcript using OpenAI Whisper
+fastify.post('/api/generate-transcript', async (request, reply) => {
+  const { filename } = request.body;
+
+  if (!filename) {
+    return reply.code(400).send({ error: 'Filename is required' });
+  }
+
+  if (!openai) {
+    return reply.code(400).send({ error: 'OpenAI API key not configured' });
+  }
+
+  const filePath = path.join(downloadsDir, filename);
+
+  if (!fs.existsSync(filePath)) {
+    return reply.code(404).send({ error: 'File not found' });
+  }
+
+  try {
+    console.log('🎙️  Starting transcript generation for:', filename);
+
+    // Create a ReadStream for the audio file
+    const audioStream = fs.createReadStream(filePath);
+
+    // Generate transcript using Whisper
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioStream,
+      model: 'whisper-1',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word'],
+    });
+
+    console.log('✅ Transcript generation completed');
+
+    // Update metadata with transcript
+    const existingMetadata = loadMetadata(filename);
+    if (existingMetadata) {
+      existingMetadata.transcript = {
+        text: transcription.text,
+        words: transcription.words || [],
+        segments: transcription.segments || [],
+        generatedAt: new Date().toISOString(),
+      };
+      saveMetadata(filename, existingMetadata);
+    }
+
+    return reply.send({
+      success: true,
+      filename: filename,
+      transcript: {
+        text: transcription.text,
+        words: transcription.words || [],
+        segments: transcription.segments || [],
+      },
+      message: 'Transcript generation completed successfully',
+    });
+  } catch (error) {
+    console.error('❌ Error in transcript generation:', error);
+    return reply.code(500).send({
+      error:
+        'Transcript generation failed: ' +
+        (error.response?.data?.error || error.message),
+    });
+  }
+});
+
+// Route to get transcript for a file
+fastify.get('/api/transcript/:filename', async (request, reply) => {
+  const filename = request.params.filename;
+
+  try {
+    const metadata = loadMetadata(filename);
+
+    if (!metadata || !metadata.transcript) {
+      return reply.code(404).send({ error: 'Transcript not found' });
+    }
+
+    return reply.send({
+      success: true,
+      transcript: metadata.transcript,
+    });
+  } catch (error) {
+    console.error('Error retrieving transcript:', error);
+    return reply.code(500).send({ error: 'Failed to retrieve transcript' });
   }
 });
 
@@ -847,6 +950,15 @@ try {
     console.log('🎵 Fadr API integration enabled - stem separation available');
   } else {
     console.log('⚠️  Fadr API key not configured - stem separation disabled');
+  }
+  if (OPENAI_API_KEY) {
+    console.log(
+      '🎙️  OpenAI API integration enabled - transcript generation available'
+    );
+  } else {
+    console.log(
+      '⚠️  OpenAI API key not configured - transcript generation disabled'
+    );
   }
 } catch (err) {
   fastify.log.error(err);

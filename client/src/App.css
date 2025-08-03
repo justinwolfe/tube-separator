@@ -981,3 +981,89 @@
     font-size: 3rem;
   }
 }
+
+/* Transcript Generation Styles */
+.transcript-generation {
+  margin-top: 30px;
+  text-align: center;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.transcript-btn {
+  padding: 16px 40px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  position: relative;
+  overflow: hidden;
+}
+
+.transcript-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.transcript-btn:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.transcript-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+.transcript-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.transcript-progress {
+  margin-top: 30px;
+  padding: 30px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.transcript-progress .progress-bar {
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.transcript-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.6),
+    rgba(255, 255, 255, 0.2)
+  );
+  animation: progress 2s infinite;
+}
+
+.transcript-progress p {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.6;
+  font-weight: 300;
+  letter-spacing: 0.5px;
+}

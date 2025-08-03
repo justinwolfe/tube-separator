@@ -6,6 +6,8 @@ const CustomAudioPlayer = ({
   stems = [],
   title,
   className = '',
+  transcript = null,
+  onSeekToTime,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -15,6 +17,7 @@ const CustomAudioPlayer = ({
   const [stemVolumes, setStemVolumes] = useState({});
   const [isDragging, setIsDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Audio refs
   const originalAudioRef = useRef(null);
@@ -304,6 +307,15 @@ const CustomAudioPlayer = ({
     }
   };
 
+  // Handle transcript word click
+  const handleTranscriptWordClick = (time) => {
+    if (onSeekToTime) {
+      onSeekToTime(time);
+    }
+    setCurrentTime(time);
+    syncAudioElements(time);
+  };
+
   const handleStemVolumeChange = (stemType, value) => {
     setStemVolumes((prev) => ({
       ...prev,
@@ -428,6 +440,47 @@ const CustomAudioPlayer = ({
           ))}
         </div>
       </div>
+
+      {/* Transcript Section */}
+      {transcript && (
+        <div className="transcript-section">
+          <div className="transcript-header">
+            <button
+              className={`transcript-toggle ${showTranscript ? 'active' : ''}`}
+              onClick={() => setShowTranscript(!showTranscript)}
+            >
+              {showTranscript ? 'HIDE TRANSCRIPT' : 'SHOW TRANSCRIPT'}
+            </button>
+          </div>
+
+          {showTranscript && (
+            <div className="transcript-content">
+              <div className="transcript-words">
+                {transcript.words && transcript.words.length > 0 ? (
+                  transcript.words.map((word, index) => (
+                    <span
+                      key={index}
+                      className={`transcript-word ${
+                        currentTime >= word.start && currentTime <= word.end
+                          ? 'active'
+                          : ''
+                      }`}
+                      onClick={() => handleTranscriptWordClick(word.start)}
+                      title={`${formatTime(word.start)} - ${formatTime(
+                        word.end
+                      )}`}
+                    >
+                      {word.word}
+                    </span>
+                  ))
+                ) : (
+                  <p className="transcript-text">{transcript.text}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

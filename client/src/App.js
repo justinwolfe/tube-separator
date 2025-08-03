@@ -16,6 +16,8 @@ function App() {
   const [savedFilesLoading, setSavedFilesLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [transcripts, setTranscripts] = useState({});
+  const [generatingTranscript, setGeneratingTranscript] = useState(false);
 
   const loadSavedFiles = async () => {
     setSavedFilesLoading(true);
@@ -26,6 +28,40 @@ function App() {
       console.error('failed to load saved files:', err);
     } finally {
       setSavedFilesLoading(false);
+    }
+  };
+
+  const generateTranscript = async (filename) => {
+    setGeneratingTranscript(true);
+    try {
+      const response = await axios.post('/api/generate-transcript', {
+        filename,
+      });
+      setTranscripts((prev) => ({
+        ...prev,
+        [filename]: response.data.transcript,
+      }));
+      return response.data.transcript;
+    } catch (err) {
+      console.error('Failed to generate transcript:', err);
+      setError(err.response?.data?.error || 'Failed to generate transcript');
+      return null;
+    } finally {
+      setGeneratingTranscript(false);
+    }
+  };
+
+  const loadTranscript = async (filename) => {
+    try {
+      const response = await axios.get(`/api/transcript/${filename}`);
+      setTranscripts((prev) => ({
+        ...prev,
+        [filename]: response.data.transcript,
+      }));
+      return response.data.transcript;
+    } catch (err) {
+      console.error('Failed to load transcript:', err);
+      return null;
     }
   };
 
@@ -293,6 +329,10 @@ function App() {
             handleDownload={handleDownload}
             formatDuration={formatDuration}
             getStemDisplayName={getStemDisplayName}
+            transcripts={transcripts}
+            generateTranscript={generateTranscript}
+            loadTranscript={loadTranscript}
+            generatingTranscript={generatingTranscript}
           />
         ) : activeTab === 'upload' ? (
           <UploadView
@@ -305,6 +345,10 @@ function App() {
             handleUpload={handleUpload}
             formatDuration={formatDuration}
             getStemDisplayName={getStemDisplayName}
+            transcripts={transcripts}
+            generateTranscript={generateTranscript}
+            loadTranscript={loadTranscript}
+            generatingTranscript={generatingTranscript}
           />
         ) : (
           <SavedView
@@ -312,6 +356,10 @@ function App() {
             loading={savedFilesLoading}
             formatDuration={formatDuration}
             getStemDisplayName={getStemDisplayName}
+            transcripts={transcripts}
+            generateTranscript={generateTranscript}
+            loadTranscript={loadTranscript}
+            generatingTranscript={generatingTranscript}
           />
         )}
       </div>
@@ -333,7 +381,24 @@ function MainView({
   handleDownload,
   formatDuration,
   getStemDisplayName,
+  transcripts,
+  generateTranscript,
+  loadTranscript,
+  generatingTranscript,
 }) {
+  // Load transcript when extraction result becomes available
+  React.useEffect(() => {
+    if (extractionResult?.filename && !transcripts[extractionResult.filename]) {
+      loadTranscript(extractionResult.filename);
+    }
+  }, [extractionResult?.filename, transcripts, loadTranscript]);
+
+  const handleGenerateTranscript = async () => {
+    if (extractionResult?.filename) {
+      await generateTranscript(extractionResult.filename);
+    }
+  };
+
   return (
     <>
       <div className="input-section">
@@ -393,6 +458,7 @@ function MainView({
                 originalTrack={extractionResult.streamUrl}
                 stems={extractionResult.stems || []}
                 className="main-player"
+                transcript={transcripts[extractionResult.filename]}
               />
               {extractionResult.processingStems && (
                 <div className="stem-progress">
@@ -400,6 +466,33 @@ function MainView({
                     <div className="progress-fill"></div>
                   </div>
                   <p>separating stems via fadr...this may take 30-60 seconds</p>
+                </div>
+              )}
+
+              {/* Transcript Generation */}
+              {extractionResult.canGenerateTranscript &&
+                !transcripts[extractionResult.filename] &&
+                !generatingTranscript && (
+                  <div className="transcript-generation">
+                    <button
+                      onClick={handleGenerateTranscript}
+                      className="transcript-btn"
+                      disabled={generatingTranscript}
+                    >
+                      generate transcript
+                    </button>
+                  </div>
+                )}
+
+              {generatingTranscript && (
+                <div className="transcript-progress">
+                  <div className="progress-bar">
+                    <div className="progress-fill"></div>
+                  </div>
+                  <p>
+                    generating transcript with openai whisper...this may take
+                    30-60 seconds
+                  </p>
                 </div>
               )}
             </div>
@@ -426,6 +519,10 @@ function SavedView({
   loading,
   formatDuration,
   getStemDisplayName,
+  transcripts,
+  generateTranscript,
+  loadTranscript,
+  generatingTranscript,
 }) {
   if (loading) {
     return (
@@ -454,6 +551,10 @@ function SavedView({
           fileGroup={fileGroup}
           formatDuration={formatDuration}
           getStemDisplayName={getStemDisplayName}
+          transcripts={transcripts}
+          generateTranscript={generateTranscript}
+          loadTranscript={loadTranscript}
+          generatingTranscript={generatingTranscript}
         />
       ))}
     </div>
@@ -471,8 +572,25 @@ function UploadView({
   handleUpload,
   formatDuration,
   getStemDisplayName,
+  transcripts,
+  generateTranscript,
+  loadTranscript,
+  generatingTranscript,
 }) {
   const [dragActive, setDragActive] = useState(false);
+
+  // Load transcript when extraction result becomes available
+  React.useEffect(() => {
+    if (extractionResult?.filename && !transcripts[extractionResult.filename]) {
+      loadTranscript(extractionResult.filename);
+    }
+  }, [extractionResult?.filename, transcripts, loadTranscript]);
+
+  const handleGenerateTranscript = async () => {
+    if (extractionResult?.filename) {
+      await generateTranscript(extractionResult.filename);
+    }
+  };
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -610,6 +728,7 @@ function UploadView({
               originalTrack={extractionResult.streamUrl}
               stems={extractionResult.stems || []}
               className="main-player"
+              transcript={transcripts[extractionResult.filename]}
             />
             {extractionResult.processingStems && (
               <div className="stem-progress">
@@ -617,6 +736,33 @@ function UploadView({
                   <div className="progress-fill"></div>
                 </div>
                 <p>separating stems via fadr...this may take 30-60 seconds</p>
+              </div>
+            )}
+
+            {/* Transcript Generation */}
+            {extractionResult.canGenerateTranscript &&
+              !transcripts[extractionResult.filename] &&
+              !generatingTranscript && (
+                <div className="transcript-generation">
+                  <button
+                    onClick={handleGenerateTranscript}
+                    className="transcript-btn"
+                    disabled={generatingTranscript}
+                  >
+                    generate transcript
+                  </button>
+                </div>
+              )}
+
+            {generatingTranscript && (
+              <div className="transcript-progress">
+                <div className="progress-bar">
+                  <div className="progress-fill"></div>
+                </div>
+                <p>
+                  generating transcript with openai whisper...this may take
+                  30-60 seconds
+                </p>
               </div>
             )}
           </div>
@@ -629,9 +775,30 @@ function UploadView({
 }
 
 // Individual saved file component
-function SavedFileItem({ fileGroup, formatDuration, getStemDisplayName }) {
+function SavedFileItem({
+  fileGroup,
+  formatDuration,
+  getStemDisplayName,
+  transcripts,
+  generateTranscript,
+  loadTranscript,
+  generatingTranscript,
+}) {
   const { original, stems, metadata } = fileGroup;
   const [expanded, setExpanded] = useState(false);
+
+  // Load transcript when component becomes expanded
+  React.useEffect(() => {
+    if (expanded && original.filename && !transcripts[original.filename]) {
+      loadTranscript(original.filename);
+    }
+  }, [expanded, original.filename, transcripts, loadTranscript]);
+
+  const handleGenerateTranscript = async () => {
+    if (original.filename) {
+      await generateTranscript(original.filename);
+    }
+  };
 
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 bytes';
@@ -693,7 +860,33 @@ function SavedFileItem({ fileGroup, formatDuration, getStemDisplayName }) {
             stems={stems}
             title={metadata?.title || original.filename}
             className="saved-player"
+            transcript={transcripts[original.filename]}
           />
+
+          {/* Transcript Generation for saved files */}
+          {!transcripts[original.filename] && !generatingTranscript && (
+            <div className="transcript-generation">
+              <button
+                onClick={handleGenerateTranscript}
+                className="transcript-btn"
+                disabled={generatingTranscript}
+              >
+                generate transcript
+              </button>
+            </div>
+          )}
+
+          {generatingTranscript && (
+            <div className="transcript-progress">
+              <div className="progress-bar">
+                <div className="progress-fill"></div>
+              </div>
+              <p>
+                generating transcript with openai whisper...this may take 30-60
+                seconds
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
