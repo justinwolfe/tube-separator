@@ -11,6 +11,12 @@ import { fileURLToPath } from 'url';
 import { setTimeout } from 'timers/promises';
 import OpenAI from 'openai';
 
+// Add File polyfill for OpenAI compatibility
+if (typeof globalThis.File === 'undefined') {
+  const { File } = await import('node:buffer');
+  globalThis.File = File;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
