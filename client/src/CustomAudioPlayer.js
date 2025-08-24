@@ -40,6 +40,10 @@ const CustomAudioPlayer = ({
   const gridOverlayRef = useRef(null);
   const waveformScrollRef = useRef(null);
   const waveformContentRef = useRef(null);
+  // Wavesurfer plugin refs/containers
+  const timelineContainerRef = useRef(null);
+  const timelinePluginRef = useRef(null);
+  const cursorPluginRef = useRef(null);
 
   // Performance refs
   const animationFrameRef = useRef(null);
@@ -63,38 +67,6 @@ const CustomAudioPlayer = ({
     setStemVolumes(initialVolumes);
   }, [stems]);
 
-  // Set up audio elements
-  useEffect(() => {
-    const originalAudio = originalAudioRef.current;
-    if (!originalAudio) return;
-
-    const handleLoadedMetadata = () => {
-      setDuration(originalAudio.duration);
-    };
-
-    const handleTimeUpdate = () => {
-      if (!isDragging) {
-        setCurrentTime(originalAudio.currentTime);
-        // Keep waveform in sync if playing via HTMLAudio
-        if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
-          const ws = wavesurferRef.current;
-          const wsDuration = ws.getDuration() || 0;
-          if (wsDuration > 0) {
-            ws.seekTo(originalAudio.currentTime / wsDuration);
-          }
-        }
-      }
-    };
-
-    originalAudio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    originalAudio.addEventListener('timeupdate', handleTimeUpdate);
-
-    return () => {
-      originalAudio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      originalAudio.removeEventListener('timeupdate', handleTimeUpdate);
-    };
-  }, [originalTrack, isDragging]);
-
   // Initialize WaveSurfer + Regions
   useEffect(() => {
     if (!waveformRef.current || !originalTrack) return;
@@ -113,7 +85,7 @@ const CustomAudioPlayer = ({
       interact: true,
       partialRender: true,
       dragToSeek: true,
-      backend: 'webaudio',
+      // backend removed in v7; use default HTML5 audio backend
     });
 
     wavesurferRef.current = ws;
@@ -127,20 +99,58 @@ const CustomAudioPlayer = ({
     });
     regionsPluginRef.current = regions;
 
+    // Opportunistically register optional plugins (Timeline, Hover)
+    (async () => {
+      try {
+        const [TimelineMod, HoverMod] = await Promise.all([
+          import('wavesurfer.js/dist/plugins/timeline.js').catch(() => null),
+          import('wavesurfer.js/dist/plugins/hover.js').catch(() => null),
+        ]);
+        if (
+          TimelineMod &&
+          TimelineMod.default &&
+          timelineContainerRef.current
+        ) {
+          try {
+            timelinePluginRef.current = ws.registerPlugin(
+              TimelineMod.default.create({
+                container: timelineContainerRef.current,
+                height: 24,
+                timeInterval: 0.5,
+                primaryLabelInterval: 5,
+                style: { color: 'rgba(255,255,255,0.7)', fontSize: '10px' },
+              })
+            );
+          } catch (_) {}
+        }
+        if (HoverMod && HoverMod.default) {
+          try {
+            cursorPluginRef.current = ws.registerPlugin(
+              HoverMod.default.create({
+                lineColor: 'rgba(255,255,255,0.6)',
+                lineWidth: 1,
+                labelBackground: 'rgba(0,0,0,0.6)',
+                labelColor: '#fff',
+                labelSize: '10px',
+                formatTimeCallback: (t) => formatTime(t),
+              })
+            );
+          } catch (_) {}
+        }
+      } catch (_) {}
+    })();
+
     // Track active region for looping
     const handleRegionCreated = (region) => {
-      // Snap to grid on create
       const snapped = snapRegion(region.start, region.end);
       if (snapped) {
         region.setOptions({ start: snapped.start, end: snapped.end });
       }
-      // Set loop by default
       region.setOptions({ loop: true });
       setActiveRegionId(region.id);
     };
 
     const handleRegionUpdated = (region) => {
-      // Snap to grid on update (drag/resize)
       const snapped = snapRegion(region.start, region.end);
       if (
         snapped &&
@@ -156,7 +166,6 @@ const CustomAudioPlayer = ({
     };
 
     const handleRegionOut = (region) => {
-      // Manual loop management for HTMLAudio
       if (region.loop) {
         const loopTo = region.start;
         setCurrentTime(loopTo);
@@ -171,10 +180,6 @@ const CustomAudioPlayer = ({
             } catch (_) {}
           }
         }
-        const originalAudio = originalAudioRef.current;
-        if (isPlaying && originalAudio && originalAudio.paused) {
-          originalAudio.play().catch(() => {});
-        }
       }
     };
 
@@ -185,22 +190,19 @@ const CustomAudioPlayer = ({
 
     ws.load(originalTrack);
 
-    // Sync durations
+    // Sync durations and unmute Wavesurfer (use it as audio transport)
     ws.on('ready', () => {
       setDuration(ws.getDuration());
-      // Mute WaveSurfer audio to use it as a visual-only transport
       try {
-        ws.setMuted(true);
+        ws.setMuted(false);
+        ws.setVolume(volume);
       } catch (e) {}
-      // compute initial width for grid
       if (waveformScrollRef.current) {
-        // Initialize content width to viewport width at zoom=1
         const viewport = waveformScrollRef.current.clientWidth || 0;
         const initialWidth = Math.max(0, Math.floor(viewport * zoom));
         setContentWidthPx(initialWidth);
         prevContentWidthRef.current = initialWidth;
         waveformWidthRef.current = initialWidth;
-        // Apply initial zoom in pixels-per-second if duration is known
         const d = ws.getDuration() || 0;
         if (d > 0 && initialWidth > 0) {
           try {
@@ -210,12 +212,11 @@ const CustomAudioPlayer = ({
       }
     });
 
-    // Sync current time updates to React state and perform loop checks
+    // Sync current time updates to React state and keep stems in sync when needed
     ws.on('timeupdate', (time) => {
       if (!isDragging) {
         setCurrentTime(time);
       }
-      // If a looping region is active, ensure we loop
       const activeRegion = getActiveRegion();
       if (activeRegion && activeRegion.loop) {
         if (time >= activeRegion.end - 0.02) {
@@ -226,11 +227,20 @@ const CustomAudioPlayer = ({
           if (d > 0) ws.seekTo(Math.min(Math.max(loopTo / d, 0), 1));
         }
       }
+      // Keep stems roughly in sync during playback
+      if (isPlaying) {
+        Object.values(stemAudioRefs.current).forEach((audio) => {
+          if (audio && Math.abs(audio.currentTime - time) > 0.05) {
+            audio.currentTime = time;
+          }
+        });
+      }
     });
 
-    // Handle seeking via waveform
+    // Handle seeking via waveform (snap to grid if enabled)
     ws.on('seek', (progress) => {
-      const target = progress * (ws.getDuration() || 0);
+      const rawTarget = progress * (ws.getDuration() || 0);
+      const target = snapTime(rawTarget);
       setCurrentTime(target);
       setDragTime(target);
       syncAudioElements(target);
@@ -254,6 +264,8 @@ const CustomAudioPlayer = ({
       ws.destroy();
       wavesurferRef.current = null;
       regionsPluginRef.current = null;
+      timelinePluginRef.current = null;
+      cursorPluginRef.current = null;
       if (ro && waveformRef.current) ro.unobserve(waveformRef.current);
     };
   }, [originalTrack]);
@@ -352,52 +364,43 @@ const CustomAudioPlayer = ({
     [duration, snapTime, beatDurationSec]
   );
 
-  // Sync all audio elements
+  // Sync stems and Wavesurfer position
   const syncAudioElements = useCallback((time) => {
-    const originalAudio = originalAudioRef.current;
-    if (originalAudio && !isNaN(time) && time >= 0) {
-      originalAudio.currentTime = time;
-    }
-
     Object.values(stemAudioRefs.current).forEach((audio) => {
       if (audio && !isNaN(time) && time >= 0) {
         audio.currentTime = time;
       }
     });
 
-    // Sync waveform position
     if (wavesurferRef.current) {
       const ws = wavesurferRef.current;
       const wsDuration = ws.getDuration() || 0;
       if (wsDuration > 0) {
-        ws.seekTo(Math.min(Math.max(time / wsDuration, 0), 1));
+        try {
+          ws.setTime(time);
+        } catch (_) {
+          ws.seekTo(Math.min(Math.max(time / wsDuration, 0), 1));
+        }
       }
     }
   }, []);
 
-  // Play/Pause functionality
+  // Play/Pause functionality using Wavesurfer as transport
   const togglePlayPause = async () => {
-    const originalAudio = originalAudioRef.current;
-    if (!originalAudio) return;
+    const ws = wavesurferRef.current;
+    if (!ws) return;
 
     try {
-      if (isPlaying) {
-        originalAudio.pause();
+      if (ws.isPlaying()) {
+        ws.pause();
         Object.values(stemAudioRefs.current).forEach((audio) => {
           if (audio) audio.pause();
         });
-        if (wavesurferRef.current && wavesurferRef.current.isPlaying()) {
-          try {
-            wavesurferRef.current.pause();
-          } catch (_) {}
-        }
         setIsPlaying(false);
       } else {
-        // If looping region exists and currentTime is outside it, start at region.start
         const activeRegion = getActiveRegion();
         let startTime =
           lastBeatClickTime != null ? lastBeatClickTime : currentTime;
-        // Fallback to region start only if we don't have a recent beat click and we're outside region
         if (
           lastBeatClickTime == null &&
           activeRegion &&
@@ -405,54 +408,40 @@ const CustomAudioPlayer = ({
         ) {
           startTime = activeRegion.start;
         }
+        startTime = snapTime(startTime);
 
-        setCurrentTime(startTime);
-        syncAudioElements(startTime);
+        try {
+          ws.setTime(startTime);
+        } catch (_) {
+          const d = ws.getDuration() || 0;
+          if (d > 0) ws.seekTo(startTime / d);
+        }
 
-        // Sync time before playing
-        syncAudioElements(startTime);
-
-        // Play active audio(s)
+        // Play per active stem mode
         if (activeStem === 'original') {
-          await originalAudio.play().catch(() => {});
-          if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
-            const ws = wavesurferRef.current;
-            const wsDuration = ws.getDuration() || 0;
-            if (wsDuration > 0) ws.seekTo(startTime / wsDuration);
-            try {
-              ws.play();
-            } catch (_) {}
-          }
+          ws.setMuted(false);
+          await ws.play();
         } else if (activeStem === 'all') {
-          await originalAudio.play().catch(() => {});
+          ws.setMuted(false);
+          await ws.play();
           await Promise.all(
             stems.map(async (stem) => {
               const audio = stemAudioRefs.current[stem.type];
               if (audio) {
+                audio.currentTime = startTime;
+                audio.volume = stemVolumes[stem.type] ?? 0.8;
                 return audio.play().catch(() => {});
               }
             })
           );
-          if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
-            const ws = wavesurferRef.current;
-            const wsDuration = ws.getDuration() || 0;
-            if (wsDuration > 0) ws.seekTo(startTime / wsDuration);
-            try {
-              ws.play();
-            } catch (_) {}
-          }
         } else {
+          // Stem-only: keep WS running for transport but muted
+          ws.setMuted(true);
+          await ws.play();
           const stemAudio = stemAudioRefs.current[activeStem];
           if (stemAudio) {
+            stemAudio.currentTime = startTime;
             await stemAudio.play().catch(() => {});
-          }
-          if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
-            const ws = wavesurferRef.current;
-            const wsDuration = ws.getDuration() || 0;
-            if (wsDuration > 0) ws.seekTo(startTime / wsDuration);
-            try {
-              ws.play();
-            } catch (_) {}
           }
         }
         setIsPlaying(true);
@@ -492,22 +481,18 @@ const CustomAudioPlayer = ({
 
   // Handle timeline click (immediate audio seek)
   const handleTimelineClick = (e) => {
-    if (isDragging) return; // Don't handle clicks during drag
+    if (isDragging) return;
     e.preventDefault();
     if (!timelineRef.current || !duration) return;
 
     const rect = timelineRef.current.getBoundingClientRect();
     const positionX = getEventPosition(e) - rect.left;
-    const newTime = getTimeFromPosition(positionX, rect);
+    const newTimeRaw = getTimeFromPosition(positionX, rect);
+    const newTime = snapTime(newTimeRaw);
 
     setCurrentTime(newTime);
     setDragTime(newTime);
     syncAudioElements(newTime);
-    if (wavesurferRef.current) {
-      const ws = wavesurferRef.current;
-      const wsDuration = ws.getDuration() || 0;
-      if (wsDuration > 0) ws.seekTo(newTime / wsDuration);
-    }
   };
 
   // Handle timeline drag (visual updates only, throttled)
@@ -549,25 +534,15 @@ const CustomAudioPlayer = ({
   const stopDragging = useCallback(() => {
     if (isDragging) {
       setIsDragging(false);
-
-      // Cancel any pending animation frame
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
-
-      // Sync audio to final position
-      const finalTime = dragTime;
+      const finalTime = snapTime(dragTime);
       setCurrentTime(finalTime);
       syncAudioElements(finalTime);
-      if (wavesurferRef.current) {
-        const ws = wavesurferRef.current;
-        const wsDuration = ws.getDuration() || 0;
-        if (wsDuration > 0)
-          ws.seekTo(Math.min(Math.max(finalTime / wsDuration, 0), 1));
-      }
     }
-  }, [isDragging, dragTime, syncAudioElements]);
+  }, [isDragging, dragTime, syncAudioElements, snapTime]);
 
   // Touch event handlers
   const handleTouchStart = (e) => {
@@ -593,103 +568,92 @@ const CustomAudioPlayer = ({
 
   // Handle stem selection
   const handleStemToggle = async (stemType) => {
-    const originalAudio = originalAudioRef.current;
+    const ws = wavesurferRef.current;
     const wasPlaying = isPlaying;
 
     if (!wasPlaying) {
-      // If not playing, just switch the active stem
       setActiveStem(stemType);
       return;
     }
 
     try {
-      // Store current time before switching
-      const currentPlayTime = originalAudio
-        ? originalAudio.currentTime
-        : currentTime;
+      const currentPlayTime = ws ? ws.getCurrentTime() : currentTime;
 
-      // Pause all current audio
-      if (originalAudio) originalAudio.pause();
+      // Pause all stems first
       Object.values(stemAudioRefs.current).forEach((audio) => {
         if (audio) audio.pause();
       });
-      if (wavesurferRef.current && wavesurferRef.current.isPlaying()) {
-        try {
-          wavesurferRef.current.pause();
-        } catch (_) {}
-      }
 
-      // Sync all audio to current time for seamless switching
+      // Sync transport to current time
       syncAudioElements(currentPlayTime);
-
-      // Small delay to ensure sync is complete
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Update active stem
       setActiveStem(stemType);
 
-      // Immediately start playing the new selection
       if (stemType === 'original') {
-        if (originalAudio) {
-          await originalAudio.play().catch(() => {});
-        }
+        ws && ws.setMuted(false);
+      } else if (stemType === 'all') {
+        ws && ws.setMuted(false);
+        await Promise.all(
+          stems.map(async (stem) => {
+            const audio = stemAudioRefs.current[stem.type];
+            if (audio) {
+              audio.currentTime = currentPlayTime;
+              audio.volume = stemVolumes[stem.type] ?? 0.8;
+              return audio.play().catch(() => {});
+            }
+          })
+        );
       } else {
+        ws && ws.setMuted(true);
         const stemAudio = stemAudioRefs.current[stemType];
         if (stemAudio) {
+          stemAudio.currentTime = currentPlayTime;
           await stemAudio.play().catch(() => {});
         }
       }
 
-      if (wavesurferRef.current) {
-        const ws = wavesurferRef.current;
-        const wsDuration = ws.getDuration() || 0;
-        if (wsDuration > 0) ws.seekTo(currentPlayTime / wsDuration);
+      // Ensure WS is playing
+      if (ws && !ws.isPlaying()) {
         try {
-          ws.play();
+          await ws.play();
         } catch (_) {}
       }
     } catch (error) {
       console.error('Error switching stems:', error);
-      // If there's an error, fall back to paused state
       setIsPlaying(false);
     }
   };
 
-  // Volume controls
+  // Volume controls: set Wavesurfer volume, keep stem gains separate
   const handleVolumeChange = (value) => {
     setVolume(value);
-    const originalAudio = originalAudioRef.current;
-    if (originalAudio) {
-      originalAudio.volume = value;
-    }
+    const ws = wavesurferRef.current;
+    try {
+      ws && ws.setVolume(value);
+    } catch (_) {}
   };
 
-  // Seek functionality
+  // Seek functionality: move by beat or seconds via Wavesurfer
   const seekBackward = () => {
-    const originalAudio = originalAudioRef.current;
-    if (originalAudio) {
-      const newTime = Math.max(0, currentTime - 5);
-      setCurrentTime(newTime);
+    const ws = wavesurferRef.current;
+    if (ws) {
+      const step = gridEnabled && beatDurationSec > 0 ? beatDurationSec : 5;
+      const newTime = Math.max(
+        0,
+        snapTime((ws.getCurrentTime?.() || currentTime) - step)
+      );
       syncAudioElements(newTime);
-      if (wavesurferRef.current) {
-        const ws = wavesurferRef.current;
-        const wsDuration = ws.getDuration() || 0;
-        if (wsDuration > 0) ws.seekTo(newTime / wsDuration);
-      }
     }
   };
 
   const seekForward = () => {
-    const originalAudio = originalAudioRef.current;
-    if (originalAudio) {
-      const newTime = Math.min(duration, currentTime + 5);
-      setCurrentTime(newTime);
+    const ws = wavesurferRef.current;
+    if (ws) {
+      const step = gridEnabled && beatDurationSec > 0 ? beatDurationSec : 5;
+      const base = ws.getCurrentTime?.() || currentTime;
+      const newTime = Math.min(duration, snapTime(base + step));
       syncAudioElements(newTime);
-      if (wavesurferRef.current) {
-        const ws = wavesurferRef.current;
-        const wsDuration = ws.getDuration() || 0;
-        if (wsDuration > 0) ws.seekTo(newTime / wsDuration);
-      }
     }
   };
 
@@ -700,11 +664,6 @@ const CustomAudioPlayer = ({
     }
     setCurrentTime(time);
     syncAudioElements(time);
-    if (wavesurferRef.current) {
-      const ws = wavesurferRef.current;
-      const wsDuration = ws.getDuration() || 0;
-      if (wsDuration > 0) ws.seekTo(time / wsDuration);
-    }
   };
 
   // Beat grid overlay rendering
@@ -895,6 +854,60 @@ const CustomAudioPlayer = ({
       if (newBpm > 20 && newBpm < 300) setBpm(Math.round(newBpm));
     }
   };
+
+  // Keyboard shortcuts for fast control
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlayPause();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        const step =
+          e.shiftKey && beatsPerBar > 0
+            ? beatDurationSec * beatsPerBar
+            : beatDurationSec || 5;
+        const t = Math.max(0, snapTime((currentTime || 0) - step));
+        setCurrentTime(t);
+        syncAudioElements(t);
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        const step =
+          e.shiftKey && beatsPerBar > 0
+            ? beatDurationSec * beatsPerBar
+            : beatDurationSec || 5;
+        const t = Math.min(duration || 0, snapTime((currentTime || 0) + step));
+        setCurrentTime(t);
+        syncAudioElements(t);
+      } else if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        createLoopBars(1);
+      } else if (['1', '2', '4'].includes(e.key)) {
+        e.preventDefault();
+        createLoopBars(parseInt(e.key, 10));
+      } else if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        setGridEnabled((v) => !v);
+      } else if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        setZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100));
+      } else if (e.key === 'x' || e.key === 'X') {
+        e.preventDefault();
+        setZoom((z) => Math.min(12, Math.round((z + 0.25) * 100) / 100));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    currentTime,
+    duration,
+    beatDurationSec,
+    beatsPerBar,
+    togglePlayPause,
+    snapTime,
+  ]);
 
   // Render formatted text with clickable words mapped from transcript.words
   const renderFormattedClickableTranscript = () => {
@@ -1221,6 +1234,8 @@ const CustomAudioPlayer = ({
             style={{ width: contentWidthPx ? `${contentWidthPx}px` : '100%' }}
           >
             <div ref={waveformRef} className="waveform" />
+            {/* Wavesurfer Timeline plugin container */}
+            <div ref={timelineContainerRef} className="waveform-timeline" />
             {/* Beat Grid Lines */}
             {gridEnabled && (
               <div
@@ -1290,15 +1305,7 @@ const CustomAudioPlayer = ({
         </div>
       </div>
 
-      {/* Hidden audio elements */}
-      <audio
-        ref={originalAudioRef}
-        src={originalTrack}
-        preload="metadata"
-        volume={volume}
-        style={{ display: 'none' }}
-      />
-
+      {/* Hidden audio elements: stems only (Wavesurfer handles main audio) */}
       {stems.map((stem) => (
         <audio
           key={stem.type}
