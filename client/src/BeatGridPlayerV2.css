@@ -1,0 +1,63 @@
+.bgp2 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #fff;
+}
+
+.bgp2-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bgp2-time,
+.bgp2-meta {
+  opacity: 0.8;
+}
+
+.bgp2-error {
+  color: #ff6b6b;
+}
+
+.bgp2-vol {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bgp2-sep {
+  flex: 1;
+}
+
+.bgp2-wave-wrap {
+  position: relative;
+}
+
+.bgp2-wave {
+  position: relative;
+}
+
+.bgp2-grid {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+}
+
+.bgp2-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.bgp2-grid-line.downbeat {
+  background: rgba(80, 160, 255, 0.9);
+}
+
+.bgp2-grid-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

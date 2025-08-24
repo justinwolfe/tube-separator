@@ -1160,6 +1160,107 @@ fastify.post('/api/analyze-beatgrid', async (request, reply) => {
   }
 });
 
+// NEW: Route to analyze BPM and beat grid (v2) with Python analyzer v2
+fastify.post('/api/analyze-beatgrid-v2', async (request, reply) => {
+  const { filename, force = false, preferStem = 'none' } = request.body || {};
+
+  if (!filename) {
+    return reply.code(400).send({ error: 'filename is required' });
+  }
+
+  try {
+    const existing = loadMetadata(filename) || {};
+    if (!force && existing.beatgridAnalysisV2) {
+      return reply.send({
+        success: true,
+        analysis: existing.beatgridAnalysisV2,
+        cached: true,
+      });
+    }
+
+    // Determine target audio path (respect preferStem hint if available)
+    const baseName = getBaseFilename(filename); // yields original name (.. .mp3)
+    let targetFilename = baseName;
+    if (preferStem === 'drums' || preferStem === 'instrumental') {
+      const candidate = baseName.replace(/\.mp3$/, `_${preferStem}.mp3`);
+      const candidatePath = path.join(downloadsDir, candidate);
+      if (fs.existsSync(candidatePath)) {
+        targetFilename = candidate;
+      }
+    }
+
+    const audioPath = path.join(downloadsDir, targetFilename);
+    if (!fs.existsSync(audioPath)) {
+      return reply.code(404).send({ error: 'file not found' });
+    }
+
+    const analyzerPath = path.join(
+      __dirname,
+      'python',
+      'analyze_beatgrid_v2.py'
+    );
+    if (!fs.existsSync(analyzerPath)) {
+      return reply
+        .code(500)
+        .send({ error: 'v2 analyzer script missing on server' });
+    }
+
+    const venvPython = path.join(__dirname, 'python', '.venv', 'bin', 'python');
+    const pythonCmd = fs.existsSync(venvPython)
+      ? venvPython
+      : process.env.PYTHON || 'python3';
+
+    const args = [
+      analyzerPath,
+      '--path',
+      audioPath,
+      '--preferStem',
+      String(preferStem),
+    ];
+    const child = spawn(pythonCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => (stdout += chunk.toString()));
+    child.stderr.on('data', (chunk) => (stderr += chunk.toString()));
+
+    const analysis = await new Promise((resolve, reject) => {
+      child.on('close', (code) => {
+        if (code === 0) {
+          try {
+            const data = JSON.parse(stdout);
+            resolve(data);
+          } catch (e) {
+            reject(new Error('failed to parse analyzer v2 output'));
+          }
+        } else {
+          reject(new Error(stderr || 'analyzer v2 failed'));
+        }
+      });
+    });
+
+    const meta = loadMetadata(filename) || { filename };
+    meta.beatgridAnalysisV2 = {
+      ...analysis,
+      analyzedAt: new Date().toISOString(),
+      analyzedFrom: targetFilename,
+    };
+    saveMetadata(filename, meta);
+
+    return reply.send({
+      success: true,
+      analysis: meta.beatgridAnalysisV2,
+      cached: false,
+    });
+  } catch (err) {
+    request.log.error(err);
+    return reply
+      .code(500)
+      .send({ error: 'beatgrid v2 analysis failed: ' + err.message });
+  }
+});
+
 // Route to serve downloaded files (for streaming/playing)
 fastify.get('/api/file/:filename', async (request, reply) => {
   const filename = request.params.filename;

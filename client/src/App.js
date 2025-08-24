@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 import CustomAudioPlayer from './CustomAudioPlayer';
+import BeatGridPlayerV2 from './BeatGridPlayerV2';
 
 function App() {
   const [activeTab, setActiveTab] = useState('main');
@@ -332,6 +333,12 @@ function App() {
           >
             saved
           </button>
+          <button
+            className={`tab-button ${activeTab === 'v2' ? 'active' : ''}`}
+            onClick={() => handleTabChange('v2')}
+          >
+            v2
+          </button>
         </div>
 
         {/* Tab Content */}
@@ -372,7 +379,7 @@ function App() {
             formatTranscript={formatTranscript}
             generatingTranscript={generatingTranscript}
           />
-        ) : (
+        ) : activeTab === 'saved' ? (
           <SavedView
             savedFiles={savedFiles}
             loading={savedFilesLoading}
@@ -383,6 +390,14 @@ function App() {
             loadTranscript={loadTranscript}
             formatTranscript={formatTranscript}
             generatingTranscript={generatingTranscript}
+          />
+        ) : (
+          <V2View
+            savedFiles={savedFiles}
+            loading={savedFilesLoading}
+            formatDuration={formatDuration}
+            getStemDisplayName={getStemDisplayName}
+            loadSavedFiles={loadSavedFiles}
           />
         )}
       </div>
@@ -974,6 +989,56 @@ function SavedFileItem({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function V2View({
+  savedFiles,
+  loading,
+  loadSavedFiles,
+  formatDuration,
+  getStemDisplayName,
+}) {
+  const [selected, setSelected] = useState(null);
+  useEffect(() => {
+    if (!savedFiles?.length) loadSavedFiles();
+  }, []);
+
+  return (
+    <div className="section">
+      <h2>beat grid player v2 (experimental)</h2>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 320 }}>
+          <h3>choose a file</h3>
+          {loading ? (
+            <div>loading…</div>
+          ) : (
+            <ul style={{ maxHeight: 280, overflow: 'auto' }}>
+              {(savedFiles || []).map((g) => (
+                <li key={g.original.filename} style={{ marginBottom: 8 }}>
+                  <button onClick={() => setSelected(g)}>
+                    {g.metadata?.title || g.original.filename} (
+                    {formatDuration(g.metadata?.duration || 0)})
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div style={{ flex: 1 }}>
+          {selected ? (
+            <BeatGridPlayerV2
+              className="card"
+              originalUrl={selected.original.streamUrl}
+              filename={selected.original.filename}
+              stems={selected.stems}
+            />
+          ) : (
+            <div>pick a file on the left</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
