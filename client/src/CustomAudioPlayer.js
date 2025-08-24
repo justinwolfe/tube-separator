@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './CustomAudioPlayer.css';
+import WaveSurfer from 'wavesurfer.js';
 
 const CustomAudioPlayer = ({
   originalTrack,
@@ -23,6 +24,8 @@ const CustomAudioPlayer = ({
   const originalAudioRef = useRef(null);
   const stemAudioRefs = useRef({});
   const timelineRef = useRef(null);
+  const waveformRef = useRef(null);
+  const wavesurferRef = useRef(null);
 
   // Performance refs
   const animationFrameRef = useRef(null);
@@ -49,6 +52,14 @@ const CustomAudioPlayer = ({
     const handleTimeUpdate = () => {
       if (!isDragging) {
         setCurrentTime(originalAudio.currentTime);
+        // Keep waveform in sync if playing via HTMLAudio
+        if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
+          const ws = wavesurferRef.current;
+          const wsDuration = ws.getDuration() || 0;
+          if (wsDuration > 0) {
+            ws.seekTo(originalAudio.currentTime / wsDuration);
+          }
+        }
       }
     };
 
@@ -60,6 +71,65 @@ const CustomAudioPlayer = ({
       originalAudio.removeEventListener('timeupdate', handleTimeUpdate);
     };
   }, [originalTrack, isDragging]);
+
+  // Initialize WaveSurfer
+  useEffect(() => {
+    if (!waveformRef.current || !originalTrack) return;
+
+    const ws = WaveSurfer.create({
+      container: waveformRef.current,
+      waveColor: 'rgba(255, 255, 255, 0.25)',
+      progressColor: 'rgba(255, 255, 255, 0.8)',
+      cursorColor: 'rgba(255, 255, 255, 0.6)',
+      cursorWidth: 1,
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 0,
+      height: 96,
+      normalize: true,
+      interact: true,
+      partialRender: true,
+      dragToSeek: true,
+      backend: 'webaudio',
+    });
+
+    wavesurferRef.current = ws;
+
+    ws.load(originalTrack);
+
+    // Sync durations
+    ws.on('ready', () => {
+      setDuration(ws.getDuration());
+      // Mute WaveSurfer audio to use it as a visual-only transport
+      try {
+        ws.setMuted(true);
+      } catch (e) {}
+    });
+
+    // Sync current time updates to React state
+    ws.on('timeupdate', (time) => {
+      if (!isDragging) {
+        setCurrentTime(time);
+      }
+    });
+
+    // Handle seeking via waveform
+    ws.on('seek', (progress) => {
+      const target = progress * (ws.getDuration() || 0);
+      setCurrentTime(target);
+      setDragTime(target);
+      syncAudioElements(target);
+    });
+
+    // Play/pause events
+    ws.on('play', () => setIsPlaying(true));
+    ws.on('pause', () => setIsPlaying(false));
+
+    return () => {
+      ws.destroy();
+      wavesurferRef.current = null;
+    };
+  }, [originalTrack]);
 
   // Sync all audio elements
   const syncAudioElements = useCallback((time) => {
@@ -73,6 +143,15 @@ const CustomAudioPlayer = ({
         audio.currentTime = time;
       }
     });
+
+    // Sync waveform position
+    if (wavesurferRef.current) {
+      const ws = wavesurferRef.current;
+      const wsDuration = ws.getDuration() || 0;
+      if (wsDuration > 0) {
+        ws.seekTo(Math.min(Math.max(time / wsDuration, 0), 1));
+      }
+    }
   }, []);
 
   // Play/Pause functionality
@@ -86,6 +165,9 @@ const CustomAudioPlayer = ({
         Object.values(stemAudioRefs.current).forEach((audio) => {
           if (audio) audio.pause();
         });
+        if (wavesurferRef.current && wavesurferRef.current.isPlaying()) {
+          wavesurferRef.current.pause();
+        }
         setIsPlaying(false);
       } else {
         // Sync time before playing
@@ -94,6 +176,13 @@ const CustomAudioPlayer = ({
         // Play active audio(s)
         if (activeStem === 'original') {
           await originalAudio.play();
+          if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
+            // Keep WS in sync: seek then play
+            const ws = wavesurferRef.current;
+            const wsDuration = ws.getDuration() || 0;
+            if (wsDuration > 0) ws.seekTo(currentTime / wsDuration);
+            ws.play();
+          }
         } else if (activeStem === 'all') {
           await originalAudio.play();
           await Promise.all(
@@ -104,10 +193,22 @@ const CustomAudioPlayer = ({
               }
             })
           );
+          if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
+            const ws = wavesurferRef.current;
+            const wsDuration = ws.getDuration() || 0;
+            if (wsDuration > 0) ws.seekTo(currentTime / wsDuration);
+            ws.play();
+          }
         } else {
           const stemAudio = stemAudioRefs.current[activeStem];
           if (stemAudio) {
             await stemAudio.play();
+          }
+          if (wavesurferRef.current && !wavesurferRef.current.isPlaying()) {
+            const ws = wavesurferRef.current;
+            const wsDuration = ws.getDuration() || 0;
+            if (wsDuration > 0) ws.seekTo(currentTime / wsDuration);
+            ws.play();
           }
         }
         setIsPlaying(true);
@@ -158,6 +259,11 @@ const CustomAudioPlayer = ({
     setCurrentTime(newTime);
     setDragTime(newTime);
     syncAudioElements(newTime);
+    if (wavesurferRef.current) {
+      const ws = wavesurferRef.current;
+      const wsDuration = ws.getDuration() || 0;
+      if (wsDuration > 0) ws.seekTo(newTime / wsDuration);
+    }
   };
 
   // Handle timeline drag (visual updates only, throttled)
@@ -175,6 +281,12 @@ const CustomAudioPlayer = ({
 
     // Only update visual state during drag, not audio
     updateTimelineVisually(newTime);
+    if (wavesurferRef.current) {
+      const ws = wavesurferRef.current;
+      const wsDuration = ws.getDuration() || 0;
+      if (wsDuration > 0)
+        ws.seekTo(Math.min(Math.max(newTime / wsDuration, 0), 1));
+    }
   };
 
   const startDragging = (e) => {
@@ -204,6 +316,12 @@ const CustomAudioPlayer = ({
       const finalTime = dragTime;
       setCurrentTime(finalTime);
       syncAudioElements(finalTime);
+      if (wavesurferRef.current) {
+        const ws = wavesurferRef.current;
+        const wsDuration = ws.getDuration() || 0;
+        if (wsDuration > 0)
+          ws.seekTo(Math.min(Math.max(finalTime / wsDuration, 0), 1));
+      }
     }
   }, [isDragging, dragTime, syncAudioElements]);
 
@@ -251,6 +369,9 @@ const CustomAudioPlayer = ({
       Object.values(stemAudioRefs.current).forEach((audio) => {
         if (audio) audio.pause();
       });
+      if (wavesurferRef.current && wavesurferRef.current.isPlaying()) {
+        wavesurferRef.current.pause();
+      }
 
       // Sync all audio to current time for seamless switching
       syncAudioElements(currentPlayTime);
@@ -271,6 +392,13 @@ const CustomAudioPlayer = ({
         if (stemAudio) {
           await stemAudio.play();
         }
+      }
+
+      if (wavesurferRef.current) {
+        const ws = wavesurferRef.current;
+        const wsDuration = ws.getDuration() || 0;
+        if (wsDuration > 0) ws.seekTo(currentPlayTime / wsDuration);
+        ws.play();
       }
     } catch (error) {
       console.error('Error switching stems:', error);
@@ -295,6 +423,11 @@ const CustomAudioPlayer = ({
       const newTime = Math.max(0, currentTime - 5);
       setCurrentTime(newTime);
       syncAudioElements(newTime);
+      if (wavesurferRef.current) {
+        const ws = wavesurferRef.current;
+        const wsDuration = ws.getDuration() || 0;
+        if (wsDuration > 0) ws.seekTo(newTime / wsDuration);
+      }
     }
   };
 
@@ -304,6 +437,11 @@ const CustomAudioPlayer = ({
       const newTime = Math.min(duration, currentTime + 5);
       setCurrentTime(newTime);
       syncAudioElements(newTime);
+      if (wavesurferRef.current) {
+        const ws = wavesurferRef.current;
+        const wsDuration = ws.getDuration() || 0;
+        if (wsDuration > 0) ws.seekTo(newTime / wsDuration);
+      }
     }
   };
 
@@ -314,6 +452,11 @@ const CustomAudioPlayer = ({
     }
     setCurrentTime(time);
     syncAudioElements(time);
+    if (wavesurferRef.current) {
+      const ws = wavesurferRef.current;
+      const wsDuration = ws.getDuration() || 0;
+      if (wsDuration > 0) ws.seekTo(time / wsDuration);
+    }
   };
 
   // Render formatted text with clickable words mapped from transcript.words
@@ -412,6 +555,11 @@ const CustomAudioPlayer = ({
 
   return (
     <div className={`custom-audio-player ${className}`}>
+      {/* Waveform */}
+      <div className="waveform-container">
+        <div ref={waveformRef} className="waveform" />
+      </div>
+
       {/* Hidden audio elements */}
       <audio
         ref={originalAudioRef}
@@ -439,32 +587,8 @@ const CustomAudioPlayer = ({
         </div>
       )}
 
-      {/* Timeline */}
+      {/* Timeline (kept as time display only, waveform handles seeking) */}
       <div className="timeline-container">
-        <div
-          ref={timelineRef}
-          className="timeline"
-          onClick={handleTimelineClick}
-          onMouseDown={startDragging}
-          onMouseMove={handleTimelineDrag}
-          onMouseUp={stopDragging}
-          onMouseLeave={stopDragging}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          <div className="timeline-track">
-            <div
-              className="timeline-progress"
-              style={{ width: `${progressPercentage}%` }}
-            />
-            <div
-              className="timeline-handle"
-              style={{ left: `${progressPercentage}%` }}
-            />
-          </div>
-        </div>
-
         <div className="time-display">
           <span>{formatTime(displayTime)}</span>
           <span>{formatTime(duration)}</span>
