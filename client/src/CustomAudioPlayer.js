@@ -316,6 +316,77 @@ const CustomAudioPlayer = ({
     syncAudioElements(time);
   };
 
+  // Render formatted text with clickable words mapped from transcript.words
+  const renderFormattedClickableTranscript = () => {
+    if (!transcript || !transcript.formattedText || !transcript.words)
+      return null;
+
+    const lines = transcript.formattedText.split('\n');
+    let wordIndex = 0;
+
+    return (
+      <div className="transcript-text">
+        {lines.map((line, lineIdx) => {
+          // Split into whitespace and non-whitespace tokens while preserving spaces
+          const tokens = line.split(/(\s+)/);
+          return (
+            <div key={lineIdx}>
+              {tokens.map((token, tokenIdx) => {
+                if (token === '') return null;
+                // Whitespace: render as-is
+                if (/^\s+$/.test(token)) {
+                  return <span key={`${lineIdx}-${tokenIdx}`}>{token}</span>;
+                }
+
+                // Non-whitespace: try to map to next word, preserving punctuation
+                const leadingPunctMatch = token.match(/^[\(\[\{"'“‘]+/);
+                const trailingPunctMatch = token.match(/[\)\]\}"'”’!?,.:;]+$/);
+                const leadingPunct = leadingPunctMatch
+                  ? leadingPunctMatch[0]
+                  : '';
+                const trailingPunct = trailingPunctMatch
+                  ? trailingPunctMatch[0]
+                  : '';
+
+                // Core token without surrounding punctuation
+                const coreStart = leadingPunct.length;
+                const coreEnd = token.length - trailingPunct.length;
+                const core = token.slice(coreStart, coreEnd);
+
+                if (wordIndex < transcript.words.length) {
+                  const wordObj = transcript.words[wordIndex++];
+                  const isActive =
+                    currentTime >= wordObj.start && currentTime <= wordObj.end;
+
+                  return (
+                    <React.Fragment key={`${lineIdx}-${tokenIdx}`}>
+                      {leadingPunct}
+                      <span
+                        className={`transcript-word ${
+                          isActive ? 'active' : ''
+                        }`}
+                        onClick={() => handleTranscriptWordClick(wordObj.start)}
+                        title={`${formatTime(wordObj.start)} - ${formatTime(
+                          wordObj.end
+                        )}`}
+                      >
+                        {wordObj.word}
+                      </span>
+                      {trailingPunct}
+                    </React.Fragment>
+                  );
+                }
+
+                // Fallback: render token if we ran out of words
+                return <span key={`${lineIdx}-${tokenIdx}`}>{token}</span>;
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const handleStemVolumeChange = (stemType, value) => {
     setStemVolumes((prev) => ({
       ...prev,
@@ -456,25 +527,36 @@ const CustomAudioPlayer = ({
           {showTranscript && (
             <div className="transcript-content">
               <div className="transcript-words">
-                {transcript.words && transcript.words.length > 0 ? (
+                {transcript.formattedText &&
+                transcript.words &&
+                transcript.words.length > 0 ? (
+                  renderFormattedClickableTranscript()
+                ) : transcript.words && transcript.words.length > 0 ? (
                   transcript.words.map((word, index) => (
-                    <span
-                      key={index}
-                      className={`transcript-word ${
-                        currentTime >= word.start && currentTime <= word.end
-                          ? 'active'
-                          : ''
-                      }`}
-                      onClick={() => handleTranscriptWordClick(word.start)}
-                      title={`${formatTime(word.start)} - ${formatTime(
-                        word.end
-                      )}`}
-                    >
-                      {word.word}
-                    </span>
+                    <React.Fragment key={index}>
+                      <span
+                        className={`transcript-word ${
+                          currentTime >= word.start && currentTime <= word.end
+                            ? 'active'
+                            : ''
+                        }`}
+                        onClick={() => handleTranscriptWordClick(word.start)}
+                        title={`${formatTime(word.start)} - ${formatTime(
+                          word.end
+                        )}`}
+                      >
+                        {word.word}
+                      </span>{' '}
+                    </React.Fragment>
                   ))
                 ) : (
-                  <p className="transcript-text">{transcript.text}</p>
+                  <div className="transcript-text">
+                    {transcript.formattedText ? (
+                      <div>{transcript.formattedText}</div>
+                    ) : (
+                      <p>{transcript.text}</p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

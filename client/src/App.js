@@ -65,6 +65,26 @@ function App() {
     }
   };
 
+  const formatTranscript = async (filename) => {
+    setGeneratingTranscript(true);
+    try {
+      const response = await axios.post('/api/format-transcript', {
+        filename,
+      });
+      setTranscripts((prev) => ({
+        ...prev,
+        [filename]: response.data.transcript,
+      }));
+      return response.data.transcript;
+    } catch (err) {
+      console.error('Failed to format transcript:', err);
+      setError(err.response?.data?.error || 'Failed to format transcript');
+      return null;
+    } finally {
+      setGeneratingTranscript(false);
+    }
+  };
+
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     if (tab === 'saved') {
@@ -332,6 +352,7 @@ function App() {
             transcripts={transcripts}
             generateTranscript={generateTranscript}
             loadTranscript={loadTranscript}
+            formatTranscript={formatTranscript}
             generatingTranscript={generatingTranscript}
           />
         ) : activeTab === 'upload' ? (
@@ -348,6 +369,7 @@ function App() {
             transcripts={transcripts}
             generateTranscript={generateTranscript}
             loadTranscript={loadTranscript}
+            formatTranscript={formatTranscript}
             generatingTranscript={generatingTranscript}
           />
         ) : (
@@ -359,6 +381,7 @@ function App() {
             transcripts={transcripts}
             generateTranscript={generateTranscript}
             loadTranscript={loadTranscript}
+            formatTranscript={formatTranscript}
             generatingTranscript={generatingTranscript}
           />
         )}
@@ -384,6 +407,7 @@ function MainView({
   transcripts,
   generateTranscript,
   loadTranscript,
+  formatTranscript,
   generatingTranscript,
 }) {
   // Load transcript when extraction result becomes available
@@ -484,13 +508,31 @@ function MainView({
                   </div>
                 )}
 
+              {/* Format existing transcript */}
+              {transcripts[extractionResult.filename] &&
+                transcripts[extractionResult.filename].text &&
+                !transcripts[extractionResult.filename].formattedText &&
+                !generatingTranscript && (
+                  <div className="transcript-generation">
+                    <button
+                      onClick={async () => {
+                        await formatTranscript(extractionResult.filename);
+                      }}
+                      className="transcript-btn"
+                      disabled={generatingTranscript}
+                    >
+                      format transcript into lines
+                    </button>
+                  </div>
+                )}
+
               {generatingTranscript && (
                 <div className="transcript-progress">
                   <div className="progress-bar">
                     <div className="progress-fill"></div>
                   </div>
                   <p>
-                    generating transcript with openai whisper...this may take
+                    generating/formatting transcript with openai...this may take
                     30-60 seconds
                   </p>
                 </div>
@@ -522,6 +564,7 @@ function SavedView({
   transcripts,
   generateTranscript,
   loadTranscript,
+  formatTranscript,
   generatingTranscript,
 }) {
   if (loading) {
@@ -554,6 +597,7 @@ function SavedView({
           transcripts={transcripts}
           generateTranscript={generateTranscript}
           loadTranscript={loadTranscript}
+          formatTranscript={formatTranscript}
           generatingTranscript={generatingTranscript}
         />
       ))}
@@ -575,6 +619,7 @@ function UploadView({
   transcripts,
   generateTranscript,
   loadTranscript,
+  formatTranscript,
   generatingTranscript,
 }) {
   const [dragActive, setDragActive] = useState(false);
@@ -754,13 +799,31 @@ function UploadView({
                 </div>
               )}
 
+            {/* Format existing transcript */}
+            {transcripts[extractionResult.filename] &&
+              transcripts[extractionResult.filename].text &&
+              !transcripts[extractionResult.filename].formattedText &&
+              !generatingTranscript && (
+                <div className="transcript-generation">
+                  <button
+                    onClick={async () => {
+                      await formatTranscript(extractionResult.filename);
+                    }}
+                    className="transcript-btn"
+                    disabled={generatingTranscript}
+                  >
+                    format transcript into lines
+                  </button>
+                </div>
+              )}
+
             {generatingTranscript && (
               <div className="transcript-progress">
                 <div className="progress-bar">
                   <div className="progress-fill"></div>
                 </div>
                 <p>
-                  generating transcript with openai whisper...this may take
+                  generating/formatting transcript with openai...this may take
                   30-60 seconds
                 </p>
               </div>
@@ -782,6 +845,7 @@ function SavedFileItem({
   transcripts,
   generateTranscript,
   loadTranscript,
+  formatTranscript,
   generatingTranscript,
 }) {
   const { original, stems, metadata } = fileGroup;
@@ -876,14 +940,32 @@ function SavedFileItem({
             </div>
           )}
 
+          {/* Format existing transcript for saved files */}
+          {transcripts[original.filename] &&
+            transcripts[original.filename].text &&
+            !transcripts[original.filename].formattedText &&
+            !generatingTranscript && (
+              <div className="transcript-generation">
+                <button
+                  onClick={async () => {
+                    await formatTranscript(original.filename);
+                  }}
+                  className="transcript-btn"
+                  disabled={generatingTranscript}
+                >
+                  format transcript into lines
+                </button>
+              </div>
+            )}
+
           {generatingTranscript && (
             <div className="transcript-progress">
               <div className="progress-bar">
                 <div className="progress-fill"></div>
               </div>
               <p>
-                generating transcript with openai whisper...this may take 30-60
-                seconds
+                generating/formatting transcript with openai...this may take
+                30-60 seconds
               </p>
             </div>
           )}

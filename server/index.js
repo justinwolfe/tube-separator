@@ -644,11 +644,45 @@ fastify.post('/api/generate-transcript', async (request, reply) => {
 
     console.log('✅ Transcript generation completed');
 
+    // Format the transcript text into readable lines using OpenAI
+    let formattedText = transcription.text;
+    try {
+      console.log('🎨 Formatting transcript text...');
+      const formattingResponse = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a transcript formatter. Break the given text into natural, readable lines with proper line breaks. Add line breaks at natural pauses, sentence boundaries, and logical breaks. Do not change the actual words, only add line breaks for readability. Return only the formatted text, no explanations.',
+          },
+          {
+            role: 'user',
+            content: transcription.text,
+          },
+        ],
+        max_tokens: 4000,
+        temperature: 0,
+      });
+
+      if (formattingResponse.choices[0]?.message?.content) {
+        formattedText = formattingResponse.choices[0].message.content.trim();
+        console.log('✅ Transcript formatting completed');
+      }
+    } catch (formattingError) {
+      console.warn(
+        '⚠️ Text formatting failed, using original text:',
+        formattingError.message
+      );
+      // Continue with unformatted text if formatting fails
+    }
+
     // Update metadata with transcript
     const existingMetadata = loadMetadata(filename);
     if (existingMetadata) {
       existingMetadata.transcript = {
         text: transcription.text,
+        formattedText: formattedText,
         words: transcription.words || [],
         segments: transcription.segments || [],
         generatedAt: new Date().toISOString(),
@@ -661,6 +695,7 @@ fastify.post('/api/generate-transcript', async (request, reply) => {
       filename: filename,
       transcript: {
         text: transcription.text,
+        formattedText: formattedText,
         words: transcription.words || [],
         segments: transcription.segments || [],
       },
@@ -671,6 +706,84 @@ fastify.post('/api/generate-transcript', async (request, reply) => {
     return reply.code(500).send({
       error:
         'Transcript generation failed: ' +
+        (error.response?.data?.error || error.message),
+    });
+  }
+});
+
+// Route to format existing transcript text
+fastify.post('/api/format-transcript', async (request, reply) => {
+  const { filename } = request.body;
+
+  if (!filename) {
+    return reply.code(400).send({ error: 'Filename is required' });
+  }
+
+  if (!openai) {
+    return reply.code(400).send({ error: 'OpenAI API key not configured' });
+  }
+
+  try {
+    console.log('🎨 Formatting existing transcript for:', filename);
+
+    // Load existing metadata
+    const existingMetadata = loadMetadata(filename);
+    if (
+      !existingMetadata ||
+      !existingMetadata.transcript ||
+      !existingMetadata.transcript.text
+    ) {
+      return reply
+        .code(404)
+        .send({ error: 'No transcript found for this file' });
+    }
+
+    const transcriptText = existingMetadata.transcript.text;
+
+    // Format the transcript text using OpenAI
+    const formattingResponse = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a transcript formatter. Break the given text into natural, readable lines with proper line breaks. Add line breaks at natural pauses, sentence boundaries, and logical breaks. Do not change the actual words, only add line breaks for readability. Return only the formatted text, no explanations.',
+        },
+        {
+          role: 'user',
+          content: transcriptText,
+        },
+      ],
+      max_tokens: 4000,
+      temperature: 0,
+    });
+
+    const formattedText =
+      formattingResponse.choices[0]?.message?.content?.trim() || transcriptText;
+
+    // Update metadata with formatted text
+    existingMetadata.transcript.formattedText = formattedText;
+    existingMetadata.transcript.formattedAt = new Date().toISOString();
+    saveMetadata(filename, existingMetadata);
+
+    console.log('✅ Transcript formatting completed');
+
+    return reply.send({
+      success: true,
+      filename: filename,
+      transcript: {
+        text: existingMetadata.transcript.text,
+        formattedText: formattedText,
+        words: existingMetadata.transcript.words || [],
+        segments: existingMetadata.transcript.segments || [],
+      },
+      message: 'Transcript formatting completed successfully',
+    });
+  } catch (error) {
+    console.error('❌ Error in transcript formatting:', error);
+    return reply.code(500).send({
+      error:
+        'Transcript formatting failed: ' +
         (error.response?.data?.error || error.message),
     });
   }
