@@ -11,6 +11,7 @@
 /* Waveform Styles */
 .waveform-container {
   margin-bottom: 28px;
+  position: relative;
 }
 
 .waveform {
@@ -18,6 +19,102 @@
   height: 96px;
   position: relative;
   overflow: hidden;
+}
+
+/* Beat Grid Lines (extends above waveform) */
+.beat-grid-lines {
+  position: absolute;
+  top: 0; /* no extension for container */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1; /* below regions */
+}
+
+/* Original overlay class kept for backward compatibility */
+.beat-grid-overlay {
+  position: absolute;
+  top: -24px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(100% + 24px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Handles overlay sits on top for clicks */
+.beat-grid-handles {
+  position: absolute;
+  top: -24px;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: none; /* only handles receive events */
+  z-index: 3; /* above regions */
+}
+
+.grid-handle {
+  position: absolute;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: rgba(80, 160, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(80, 160, 255, 0.2);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.grid-handle.bar {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(80, 160, 255, 0.9);
+}
+
+.grid-handle:hover {
+  box-shadow: 0 0 0 3px rgba(80, 160, 255, 0.35);
+}
+
+.grid-handle.start {
+  background: #ffd166;
+  border-color: rgba(255, 209, 102, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.25);
+}
+
+/* Grid lines */
+.grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  pointer-events: none;
+}
+
+/* Only bar lines extend above waveform */
+.grid-line--extend {
+  top: -24px;
+  height: calc(100% + 24px);
+}
+
+.grid-line--bar {
+  width: 2px;
+  background: rgba(80, 160, 255, 0.35);
+}
+
+/* Regions from wavesurfer are typically in a separate layer; ensure they sit above grid */
+.waveform .wavesurfer-region,
+.waveform .region,
+.waveform .ws-region {
+  z-index: 2;
+}
+
+.beat-grid-overlay:active {
+  cursor: default;
 }
 
 .waveform ::selection {
@@ -62,8 +159,50 @@
   display: flex;
   align-items: center;
   gap: 40px;
-  margin-bottom: 40px;
+  margin-bottom: 20px;
   justify-content: center;
+}
+
+/* Grid Controls */
+.grid-controls {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 40px;
+}
+
+.grid-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.grid-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.grid-input {
+  width: 80px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.grid-btn,
+.grid-toggle {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+.grid-toggle.active {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .play-pause-btn {
@@ -209,7 +348,10 @@
 /* Focus states for accessibility */
 .stem-toggle:focus,
 .play-pause-btn:focus,
-.seek-btn:focus {
+.seek-btn:focus,
+.grid-btn:focus,
+.grid-toggle:focus,
+.grid-input:focus {
   outline: 1px solid rgba(255, 255, 255, 0.3);
   outline-offset: 2px;
 }

@@ -483,6 +483,7 @@ function MainView({
                 stems={extractionResult.stems || []}
                 className="main-player"
                 transcript={transcripts[extractionResult.filename]}
+                originalFilename={extractionResult.filename}
               />
               {extractionResult.processingStems && (
                 <div className="stem-progress">
@@ -774,6 +775,7 @@ function UploadView({
               stems={extractionResult.stems || []}
               className="main-player"
               transcript={transcripts[extractionResult.filename]}
+              originalFilename={extractionResult.filename}
             />
             {extractionResult.processingStems && (
               <div className="stem-progress">
@@ -925,6 +927,7 @@ function SavedFileItem({
             title={metadata?.title || original.filename}
             className="saved-player"
             transcript={transcripts[original.filename]}
+            originalFilename={original.filename}
           />
 
           {/* Transcript Generation for saved files */}

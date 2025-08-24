@@ -902,6 +902,86 @@ fastify.post('/api/separate-stems', async (request, reply) => {
   }
 });
 
+// Route to extract a loop from a file (original or stem) using ffmpeg
+fastify.post('/api/extract-loop', async (request, reply) => {
+  const { filename, start, end, stemType } = request.body || {};
+
+  if (!filename || typeof start !== 'number' || typeof end !== 'number') {
+    return reply
+      .code(400)
+      .send({ error: 'filename, start, and end are required' });
+  }
+
+  if (end <= start) {
+    return reply.code(400).send({ error: 'end must be greater than start' });
+  }
+
+  try {
+    // Determine source file (stem or original)
+    let sourceFilename = filename;
+    if (
+      stemType &&
+      /^(vocals|drums|bass|instrumental|melodies|other)$/.test(stemType)
+    ) {
+      const base = path.parse(filename).name; // without extension
+      sourceFilename = `${base}_${stemType}.mp3`;
+    }
+
+    const sourcePath = path.join(downloadsDir, sourceFilename);
+    if (!fs.existsSync(sourcePath)) {
+      return reply.code(404).send({ error: 'source file not found' });
+    }
+
+    const loopBase = `${path.parse(sourceFilename).name}_loop_${Math.round(
+      start * 1000
+    )}_${Math.round(end * 1000)}`;
+    const outputFilename = `${loopBase}.mp3`;
+    const outputPath = path.join(downloadsDir, outputFilename);
+
+    // Use ffmpeg to extract segment
+    // -accurate_seek with -ss before -i is faster but less accurate; place -ss after -i for accuracy
+    await new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-i',
+        sourcePath,
+        '-ss',
+        start.toString(),
+        '-to',
+        end.toString(),
+        '-c',
+        'copy',
+        '-y',
+        outputPath,
+      ]);
+
+      let error = '';
+      ffmpeg.stderr.on('data', (chunk) => {
+        error += chunk;
+      });
+      ffmpeg.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(error || 'ffmpeg failed'));
+      });
+    });
+
+    // respond with download + stream urls
+    return reply.send({
+      success: true,
+      filename: outputFilename,
+      streamUrl: `/api/file/${outputFilename}`,
+      downloadUrl: `/api/download/${outputFilename}`,
+      start,
+      end,
+      stemType: stemType || null,
+    });
+  } catch (err) {
+    console.error('Error extracting loop:', err);
+    return reply
+      .code(500)
+      .send({ error: 'failed to extract loop: ' + err.message });
+  }
+});
+
 // Route to serve downloaded files (for streaming/playing)
 fastify.get('/api/file/:filename', async (request, reply) => {
   const filename = request.params.filename;
