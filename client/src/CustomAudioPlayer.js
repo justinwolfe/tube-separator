@@ -67,6 +67,51 @@ const CustomAudioPlayer = ({
     setStemVolumes(initialVolumes);
   }, [stems]);
 
+  // Auto-analyze BPM and grid using backend when filename is known
+  useEffect(() => {
+    if (!originalFilename) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/analyze-beatgrid', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: originalFilename }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const a = data && data.analysis;
+        if (!a || cancelled) return;
+        if (
+          typeof a.bpm === 'number' &&
+          isFinite(a.bpm) &&
+          a.bpm > 0 &&
+          a.bpm < 400
+        ) {
+          setBpm(Math.round(a.bpm * 10) / 10);
+        }
+        if (
+          typeof a.beatsPerBar === 'number' &&
+          isFinite(a.beatsPerBar) &&
+          a.beatsPerBar >= 1 &&
+          a.beatsPerBar <= 12
+        ) {
+          setBeatsPerBar(Math.round(a.beatsPerBar));
+        }
+        if (
+          typeof a.gridOffsetSec === 'number' &&
+          isFinite(a.gridOffsetSec) &&
+          a.gridOffsetSec >= 0
+        ) {
+          setGridOffsetSec(a.gridOffsetSec);
+        }
+      } catch (_) {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [originalFilename]);
+
   // Initialize WaveSurfer + Regions
   useEffect(() => {
     if (!waveformRef.current || !originalTrack) return;

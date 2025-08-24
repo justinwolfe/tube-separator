@@ -982,6 +982,184 @@ fastify.post('/api/extract-loop', async (request, reply) => {
   }
 });
 
+// Route to analyze BPM and beat grid using Python (librosa)
+fastify.post('/api/analyze-beatgrid', async (request, reply) => {
+  const { filename, force = false } = request.body || {};
+
+  if (!filename) {
+    return reply.code(400).send({ error: 'filename is required' });
+  }
+
+  try {
+    // If cached in metadata and not forcing, return cached
+    const existing = loadMetadata(filename) || {};
+    if (!force && existing.beatgridAnalysis) {
+      return reply.send({
+        success: true,
+        analysis: existing.beatgridAnalysis,
+        cached: true,
+      });
+    }
+
+    const audioPath = path.join(downloadsDir, filename);
+    if (!fs.existsSync(audioPath)) {
+      return reply.code(404).send({ error: 'file not found' });
+    }
+
+    // Helper: try aubio CLI (preferred, no Python deps)
+    const analyzeWithAubio = async () => {
+      return await new Promise((resolve, reject) => {
+        const aubioCmd = process.env.AUBIO || 'aubio';
+        const child = spawn(aubioCmd, ['beat', audioPath], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (c) => (stdout += c.toString()));
+        child.stderr.on('data', (c) => (stderr += c.toString()));
+        child.on('error', (err) => reject(err));
+        child.on('close', (code) => {
+          if (code !== 0) return reject(new Error(stderr || 'aubio failed'));
+          try {
+            // Parse lines with numeric seconds
+            const lines = stdout
+              .split(/\r?\n/)
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+            const beats = [];
+            for (const line of lines) {
+              const v = parseFloat(line);
+              if (isFinite(v)) beats.push(v);
+            }
+            if (beats.length < 2) {
+              return resolve(null);
+            }
+            // Compute BPM from median inter-beat interval
+            const diffs = [];
+            for (let i = 1; i < beats.length; i++)
+              diffs.push(beats[i] - beats[i - 1]);
+            diffs.sort((a, b) => a - b);
+            const mid = Math.floor(diffs.length / 2);
+            const median =
+              diffs.length % 2 === 0
+                ? (diffs[mid - 1] + diffs[mid]) / 2
+                : diffs[mid];
+            const bpm = median > 0 ? Math.round((60 / median) * 10) / 10 : null;
+            // Offset from first beat within beat period
+            let gridOffsetSec = 0;
+            if (bpm && bpm > 0) {
+              const period = 60 / bpm;
+              const off = beats[0] % period;
+              gridOffsetSec = Math.abs(off) < 0.02 ? 0 : off;
+            }
+            const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+            const variance =
+              diffs.reduce((a, b) => a + Math.pow(b - mean, 2), 0) /
+              diffs.length;
+            const std = Math.sqrt(variance);
+            const confidence = Math.max(
+              0,
+              Math.min(1, 1 - std / (mean + 1e-6))
+            );
+            resolve({
+              bpm,
+              gridOffsetSec,
+              beatsPerBar: 4,
+              beatTimesSec: beats,
+              confidence,
+              analyzer: 'aubio_cli_tempo',
+            });
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    };
+
+    // Helper: fallback to Python analyzer if available
+    const analyzeWithPython = async () => {
+      const analyzerPath = path.join(
+        __dirname,
+        'python',
+        'analyze_beatgrid.py'
+      );
+      if (!fs.existsSync(analyzerPath)) {
+        throw new Error('analyzer script missing on server');
+      }
+      // Prefer local venv python if present
+      const venvPython = path.join(
+        __dirname,
+        'python',
+        '.venv',
+        'bin',
+        'python'
+      );
+      const pythonCmd = fs.existsSync(venvPython)
+        ? venvPython
+        : process.env.PYTHON || 'python3';
+
+      const args = [analyzerPath, '--path', audioPath];
+      const child = spawn(pythonCmd, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (chunk) => (stdout += chunk.toString()));
+      child.stderr.on('data', (chunk) => (stderr += chunk.toString()));
+
+      const analysis = await new Promise((resolve, reject) => {
+        child.on('close', (code) => {
+          if (code === 0) {
+            try {
+              const data = JSON.parse(stdout);
+              resolve(data);
+            } catch (e) {
+              reject(new Error('failed to parse analyzer output'));
+            }
+          } else {
+            reject(new Error(stderr || 'analyzer failed'));
+          }
+        });
+      });
+      return analysis;
+    };
+
+    let analysis = null;
+    try {
+      analysis = await analyzeWithAubio();
+    } catch (e) {
+      request.log.warn(
+        'aubio cli analysis failed, falling back to python: ' + e.message
+      );
+    }
+
+    if (!analysis) {
+      analysis = await analyzeWithPython();
+    }
+
+    // Save into metadata
+    const meta = loadMetadata(filename) || { filename };
+    meta.beatgridAnalysis = {
+      ...analysis,
+      analyzedAt: new Date().toISOString(),
+    };
+    saveMetadata(filename, meta);
+
+    return reply.send({
+      success: true,
+      analysis: meta.beatgridAnalysis,
+      cached: false,
+    });
+  } catch (err) {
+    request.log.error(err);
+    return reply
+      .code(500)
+      .send({ error: 'beatgrid analysis failed: ' + err.message });
+  }
+});
+
 // Route to serve downloaded files (for streaming/playing)
 fastify.get('/api/file/:filename', async (request, reply) => {
   const filename = request.params.filename;
