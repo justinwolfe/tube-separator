@@ -38,13 +38,21 @@ const CustomAudioPlayer = ({
   const wavesurferRef = useRef(null);
   const regionsPluginRef = useRef(null);
   const gridOverlayRef = useRef(null);
+  const waveformScrollRef = useRef(null);
+  const waveformContentRef = useRef(null);
 
   // Performance refs
   const animationFrameRef = useRef(null);
   const lastUpdateTimeRef = useRef(0);
+  const lastBpmUpdateTimeRef = useRef(0);
 
   // Resize observer to recompute grid
   const waveformWidthRef = useRef(0);
+
+  // Zoom state: 1 = fit, >1 = zoomed in
+  const [zoom, setZoom] = useState(1);
+  const [contentWidthPx, setContentWidthPx] = useState(0);
+  const prevContentWidthRef = useRef(0);
 
   // Initialize stem volumes
   useEffect(() => {
@@ -185,8 +193,20 @@ const CustomAudioPlayer = ({
         ws.setMuted(true);
       } catch (e) {}
       // compute initial width for grid
-      if (waveformRef.current) {
-        waveformWidthRef.current = waveformRef.current.clientWidth || 0;
+      if (waveformScrollRef.current) {
+        // Initialize content width to viewport width at zoom=1
+        const viewport = waveformScrollRef.current.clientWidth || 0;
+        const initialWidth = Math.max(0, Math.floor(viewport * zoom));
+        setContentWidthPx(initialWidth);
+        prevContentWidthRef.current = initialWidth;
+        waveformWidthRef.current = initialWidth;
+        // Apply initial zoom in pixels-per-second if duration is known
+        const d = ws.getDuration() || 0;
+        if (d > 0 && initialWidth > 0) {
+          try {
+            ws.zoom(initialWidth / d);
+          } catch (_) {}
+        }
       }
     });
 
@@ -237,6 +257,67 @@ const CustomAudioPlayer = ({
       if (ro && waveformRef.current) ro.unobserve(waveformRef.current);
     };
   }, [originalTrack]);
+
+  // Maintain zoomed content width and sync WaveSurfer zoom; preserve scroll position
+  useEffect(() => {
+    const scrollEl = waveformScrollRef.current;
+    const ws = wavesurferRef.current;
+    if (!scrollEl || !duration) return;
+
+    const viewportWidth = scrollEl.clientWidth || 0;
+    if (viewportWidth <= 0) return;
+
+    // Compute current center time (to preserve on zoom changes)
+    const prevContentWidth = prevContentWidthRef.current || viewportWidth;
+    const currentScrollLeft = scrollEl.scrollLeft || 0;
+    const centerPx = currentScrollLeft + viewportWidth / 2;
+    const centerTime =
+      duration > 0 ? (centerPx / prevContentWidth) * duration : 0;
+
+    // Compute new content width
+    const newContentWidth = Math.max(
+      viewportWidth,
+      Math.floor(viewportWidth * Math.max(1, zoom))
+    );
+    setContentWidthPx(newContentWidth);
+    waveformWidthRef.current = newContentWidth;
+    prevContentWidthRef.current = newContentWidth;
+
+    // Sync WaveSurfer zoom in pixels-per-second
+    if (ws && duration > 0) {
+      const pps = newContentWidth / duration;
+      try {
+        ws.zoom(pps);
+      } catch (_) {}
+    }
+
+    // Restore scroll to keep same center time in view
+    if (duration > 0) {
+      const targetCenterPx = (centerTime / duration) * newContentWidth;
+      const targetScrollLeft = Math.max(
+        0,
+        Math.min(
+          targetCenterPx - viewportWidth / 2,
+          newContentWidth - viewportWidth
+        )
+      );
+      scrollEl.scrollLeft = isFinite(targetScrollLeft) ? targetScrollLeft : 0;
+    }
+  }, [zoom, duration]);
+
+  // Observe viewport resize to recompute content width and keep zoom consistent
+  useEffect(() => {
+    if (!('ResizeObserver' in window)) return;
+    const el = waveformScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      // Trigger zoom effect by toggling a no-op state update
+      setContentWidthPx((w) => w);
+      setGridOffsetSec((s) => s + 0);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Helper: get active region instance
   const getActiveRegion = () => {
@@ -641,7 +722,8 @@ const CustomAudioPlayer = ({
       setStartHandle(null);
       return;
     }
-    const containerWidth = waveformRef.current.clientWidth || 0;
+    const containerWidth =
+      contentWidthPx || waveformRef.current.clientWidth || 0;
     waveformWidthRef.current = containerWidth;
 
     const lines = [];
@@ -680,7 +762,14 @@ const CustomAudioPlayer = ({
 
     setGridLines(lines);
     setGridHandles(handles);
-  }, [gridEnabled, beatDurationSec, beatsPerBar, gridOffsetSec, duration]);
+  }, [
+    gridEnabled,
+    beatDurationSec,
+    beatsPerBar,
+    gridOffsetSec,
+    duration,
+    contentWidthPx,
+  ]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -760,12 +849,18 @@ const CustomAudioPlayer = ({
     )
       return;
     e.preventDefault();
-    const rect = waveformRef.current.getBoundingClientRect();
+    const rect = waveformContentRef.current
+      ? waveformContentRef.current.getBoundingClientRect()
+      : waveformRef.current.getBoundingClientRect();
     gridDragRef.current = {
       dragging: true,
       startX: e.clientX,
       startOffset: gridOffsetSec,
       rect,
+      secondsPerPixel:
+        duration > 0 && (contentWidthPx || rect.width)
+          ? duration / (contentWidthPx || rect.width)
+          : 0,
     };
     document.addEventListener('mousemove', onGridMouseMove);
     document.addEventListener('mouseup', onGridMouseUp);
@@ -774,8 +869,8 @@ const CustomAudioPlayer = ({
     const st = gridDragRef.current;
     if (!st.dragging || !st.rect) return;
     const dx = e.clientX - st.startX;
-    const secondsPerPixel = duration / (st.rect.width || 1);
-    const newOffset = st.startOffset + dx * secondsPerPixel;
+    const spp = st.secondsPerPixel || 0;
+    const newOffset = st.startOffset + dx * spp;
     setGridOffsetSec(newOffset);
   };
   const onGridMouseUp = () => {
@@ -962,13 +1057,18 @@ const CustomAudioPlayer = ({
 
   const onBarHandleMouseDown = (barIndex, time, clientX) => {
     if (!waveformRef.current || !gridEnabled) return;
-    const rect = waveformRef.current.getBoundingClientRect();
+    const rect = waveformContentRef.current
+      ? waveformContentRef.current.getBoundingClientRect()
+      : waveformRef.current.getBoundingClientRect();
     barHandleDragRef.current = {
       dragging: true,
       barIndex,
       startX: clientX,
       rect,
       moved: false,
+      startScrollLeft: waveformScrollRef.current
+        ? waveformScrollRef.current.scrollLeft
+        : 0,
     };
     document.addEventListener('mousemove', onBarHandleMouseMove);
     document.addEventListener('mouseup', onBarHandleMouseUp);
@@ -980,10 +1080,16 @@ const CustomAudioPlayer = ({
     const dx = e.clientX - st.startX;
     if (Math.abs(dx) > 2) st.moved = true;
 
-    const width = st.rect.width || 1;
-    // Compute new time based on current mouse X
-    const relativeX = Math.max(0, Math.min(e.clientX - st.rect.left, width));
-    const newTime = (relativeX / width) * duration;
+    const width = contentWidthPx || st.rect.width || 1;
+    const scrollLeft = waveformScrollRef.current
+      ? waveformScrollRef.current.scrollLeft
+      : 0;
+    const viewportRelativeX = e.clientX - st.rect.left;
+    const contentX = Math.max(
+      0,
+      Math.min(viewportRelativeX + scrollLeft, width)
+    );
+    const newTime = (contentX / width) * duration;
 
     if (st.barIndex === 0) {
       // Should not happen because start handle is rendered separately; still treat as offset
@@ -991,14 +1097,24 @@ const CustomAudioPlayer = ({
       return;
     }
 
+    // Throttle updates to ~60fps
+    const now = performance.now();
+    if (now - lastBpmUpdateTimeRef.current < 16) return;
+    lastBpmUpdateTimeRef.current = now;
+
     // Dragging any later bar adjusts BPM by changing beat duration from offset (barIndex bars away)
     const barsFromZero = st.barIndex; // number of bars from offset to this handle
     const newBarDuration = (newTime - gridOffsetSec) / barsFromZero; // seconds per bar
     const newBeatDuration = newBarDuration / beatsPerBar; // seconds per beat
     if (newBeatDuration > 0.01 && isFinite(newBeatDuration)) {
+      const currentBeatDuration = beatDurationSec || 0;
+      const delta = Math.abs(newBeatDuration - currentBeatDuration);
+      const threshold = Math.max(0.0005, currentBeatDuration * 0.005);
+      if (delta < threshold) return; // ignore tiny changes to reduce jitter
       const computedBpm = 60 / newBeatDuration;
       const clamped = Math.max(20, Math.min(300, computedBpm));
-      setBpm(clamped);
+      const rounded = Math.round(clamped * 10) / 10; // 0.1 BPM precision for stability
+      setBpm(rounded);
     }
   };
 
@@ -1012,12 +1128,16 @@ const CustomAudioPlayer = ({
     // If it was a click (not a drag), create/update loop at nearest bar
     if (!st.moved) {
       const rect = st.rect;
-      const width = rect?.width || 1;
-      const relativeX = Math.max(
+      const width = contentWidthPx || rect?.width || 1;
+      const scrollLeft = waveformScrollRef.current
+        ? waveformScrollRef.current.scrollLeft
+        : 0;
+      const viewportRelativeX = e.clientX - (rect?.left || 0);
+      const contentX = Math.max(
         0,
-        Math.min(e.clientX - (rect?.left || 0), width)
+        Math.min(viewportRelativeX + scrollLeft, width)
       );
-      const clickedTime = (relativeX / width) * duration;
+      const clickedTime = (contentX / width) * duration;
       handleHandleClick(clickedTime);
     }
   };
@@ -1032,9 +1152,12 @@ const CustomAudioPlayer = ({
     e.preventDefault();
     e.stopPropagation();
     if (!waveformRef.current || !gridEnabled) return;
+    const rect = waveformContentRef.current
+      ? waveformContentRef.current.getBoundingClientRect()
+      : waveformRef.current.getBoundingClientRect();
     startHandleDragRef.current = {
       dragging: true,
-      rect: waveformRef.current.getBoundingClientRect(),
+      rect,
       moved: false,
     };
     document.addEventListener('mousemove', onStartHandleMouseMove);
@@ -1043,9 +1166,16 @@ const CustomAudioPlayer = ({
   const onStartHandleMouseMove = (e) => {
     const st = startHandleDragRef.current;
     if (!st.dragging || !st.rect || duration <= 0) return;
-    const width = st.rect.width || 1;
-    const relativeX = Math.max(0, Math.min(e.clientX - st.rect.left, width));
-    const newTime = (relativeX / width) * duration;
+    const width = contentWidthPx || st.rect.width || 1;
+    const scrollLeft = waveformScrollRef.current
+      ? waveformScrollRef.current.scrollLeft
+      : 0;
+    const viewportRelativeX = e.clientX - st.rect.left;
+    const contentX = Math.max(
+      0,
+      Math.min(viewportRelativeX + scrollLeft, width)
+    );
+    const newTime = (contentX / width) * duration;
     st.moved = true;
     // Clamp offset within [0, duration]
     setGridOffsetSec(Math.max(0, Math.min(duration, newTime)));
@@ -1056,13 +1186,27 @@ const CustomAudioPlayer = ({
     document.removeEventListener('mousemove', onStartHandleMouseMove);
     document.removeEventListener('mouseup', onStartHandleMouseUp);
     startHandleDragRef.current.dragging = false;
-    // Always set last beat target to offset when releasing start handle
-    setLastBeatClickTime(gridOffsetSec);
-    setCurrentTime(gridOffsetSec);
-    syncAudioElements(gridOffsetSec);
+    // Compute landed time at mouse position to avoid stale state
+    const rect = st.rect;
+    const width = contentWidthPx || rect?.width || 1;
+    const scrollLeft = waveformScrollRef.current
+      ? waveformScrollRef.current.scrollLeft
+      : 0;
+    const viewportRelativeX = e.clientX - (rect?.left || 0);
+    const contentX = Math.max(
+      0,
+      Math.min(viewportRelativeX + scrollLeft, width)
+    );
+    const landedTime = (contentX / width) * (duration || 0);
+    const clampedTime = Math.max(0, Math.min(duration || 0, landedTime));
+    // Update offset, last clicked, and playback position
+    setGridOffsetSec(clampedTime);
+    setLastBeatClickTime(clampedTime);
+    setCurrentTime(clampedTime);
+    syncAudioElements(clampedTime);
     if (!st.moved) {
       // Click on start handle: create 1-bar loop starting at offset as well
-      handleHandleClick(gridOffsetSec);
+      handleHandleClick(clampedTime);
     }
   };
 
@@ -1070,72 +1214,80 @@ const CustomAudioPlayer = ({
     <div className={`custom-audio-player ${className}`}>
       {/* Waveform */}
       <div className="waveform-container">
-        <div ref={waveformRef} className="waveform" />
-        {/* Beat Grid Lines */}
-        {gridEnabled && (
+        <div className="waveform-scroll" ref={waveformScrollRef}>
           <div
-            className={`beat-grid-lines ${
-              gridDragEnabled ? 'beat-grid-overlay--interactive' : ''
-            }`}
+            className="waveform-content"
+            ref={waveformContentRef}
+            style={{ width: contentWidthPx ? `${contentWidthPx}px` : '100%' }}
           >
-            {gridLines.map((line, idx) => (
+            <div ref={waveformRef} className="waveform" />
+            {/* Beat Grid Lines */}
+            {gridEnabled && (
               <div
-                key={idx}
-                className={
-                  line.isBar
-                    ? 'grid-line grid-line--bar grid-line--extend'
-                    : 'grid-line'
-                }
-                style={{ left: `${line.x}px` }}
-              />
-            ))}
-          </div>
-        )}
-        {/* Beat Grid Handles on top (bars only) */}
-        {gridEnabled && startHandle && (
-          <div className="beat-grid-handles">
-            <div
-              className="grid-handle start"
-              style={{ left: `${startHandle.x}px` }}
-              onMouseDown={onStartHandleMouseDown}
-              title={
-                'Drag to set grid start (offset). Click to set 1 bar loop.'
-              }
-            />
-          </div>
-        )}
-        {gridEnabled && (
-          <div className="beat-grid-handles">
-            {gridHandles.map((h, idx) => (
+                className={`beat-grid-lines ${
+                  gridDragEnabled ? 'beat-grid-overlay--interactive' : ''
+                }`}
+              >
+                {gridLines.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className={
+                      line.isBar
+                        ? 'grid-line grid-line--bar grid-line--extend'
+                        : 'grid-line'
+                    }
+                    style={{ left: `${line.x}px` }}
+                  />
+                ))}
+              </div>
+            )}
+            {/* Beat Grid Handles on top (bars only) */}
+            {gridEnabled && startHandle && (
+              <div className="beat-grid-handles">
+                <div
+                  className="grid-handle start"
+                  style={{ left: `${startHandle.x}px` }}
+                  onMouseDown={onStartHandleMouseDown}
+                  title={
+                    'Drag to set grid start (offset). Click to set 1 bar loop.'
+                  }
+                />
+              </div>
+            )}
+            {gridEnabled && (
+              <div className="beat-grid-handles">
+                {gridHandles.map((h, idx) => (
+                  <div
+                    key={idx}
+                    className={`grid-handle bar`}
+                    style={{ left: `${h.x}px` }}
+                    onMouseDown={(e) =>
+                      onBarHandleMouseDown(h.barIndex, h.time, e.clientX)
+                    }
+                    title={
+                      'Drag to adjust BPM relative to start. Click to set loop.'
+                    }
+                  />
+                ))}
+              </div>
+            )}
+            {/* Optional: phase drag area uses original overlay but is invisible */}
+            {gridEnabled && (
               <div
-                key={idx}
-                className={`grid-handle bar`}
-                style={{ left: `${h.x}px` }}
-                onMouseDown={(e) =>
-                  onBarHandleMouseDown(h.barIndex, h.time, e.clientX)
-                }
+                className={`beat-grid-overlay ${
+                  gridDragEnabled ? 'beat-grid-overlay--interactive' : ''
+                }`}
+                ref={gridOverlayRef}
+                onMouseDown={onGridMouseDown}
                 title={
-                  'Drag to adjust BPM relative to start. Click to set loop.'
+                  gridDragEnabled
+                    ? 'Drag to shift grid phase'
+                    : 'Toggle Adjust Grid to drag'
                 }
               />
-            ))}
+            )}
           </div>
-        )}
-        {/* Optional: phase drag area uses original overlay but is invisible */}
-        {gridEnabled && (
-          <div
-            className={`beat-grid-overlay ${
-              gridDragEnabled ? 'beat-grid-overlay--interactive' : ''
-            }`}
-            ref={gridOverlayRef}
-            onMouseDown={onGridMouseDown}
-            title={
-              gridDragEnabled
-                ? 'Drag to shift grid phase'
-                : 'Toggle Adjust Grid to drag'
-            }
-          />
-        )}
+        </div>
       </div>
 
       {/* Hidden audio elements */}
@@ -1201,6 +1353,35 @@ const CustomAudioPlayer = ({
       {/* Beat Grid + Loop Controls */}
       <div className="grid-controls">
         <div className="grid-controls-row">
+          <label className="grid-label">Zoom</label>
+          <input
+            className="grid-input"
+            type="range"
+            min={1}
+            max={12}
+            step={0.1}
+            value={zoom}
+            onChange={(e) => setZoom(parseFloat(e.target.value || '1'))}
+            title="Zoom waveform and grid"
+          />
+          <button
+            className="grid-btn"
+            onClick={() =>
+              setZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))
+            }
+            title="Zoom out"
+          >
+            −
+          </button>
+          <button
+            className="grid-btn"
+            onClick={() =>
+              setZoom((z) => Math.min(12, Math.round((z + 0.25) * 100) / 100))
+            }
+            title="Zoom in"
+          >
+            +
+          </button>
           <label className="grid-label">BPM</label>
           <input
             className="grid-input"
