@@ -722,7 +722,7 @@ const CustomAudioPlayer = ({
   const seekBackward = () => {
     const originalAudio = originalAudioRef.current;
     if (originalAudio) {
-      const newTime = Math.max(0, currentTime - 2);
+      const newTime = Math.max(0, currentTime - 0.5);
       setCurrentTime(newTime);
       syncAudioElements(newTime);
     }
@@ -731,7 +731,7 @@ const CustomAudioPlayer = ({
   const seekForward = () => {
     const originalAudio = originalAudioRef.current;
     if (originalAudio) {
-      const newTime = Math.min(duration, currentTime + 2);
+      const newTime = Math.min(duration, currentTime + 0.5);
       setCurrentTime(newTime);
       syncAudioElements(newTime);
     }

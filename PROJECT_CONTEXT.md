@@ -293,7 +293,7 @@ pnpm run kill-ports        # Kill any conflicting processes
 
 - Space: Toggle play/pause
 - T: Cycle through available stems (Original → next stem ...)
-- Arrow Left/Right: Seek backward/forward 5s
+- Arrow Left/Right: Seek backward/forward 0.5s
 - F: Set start point and display a synchronized marker across all waveforms
 
 ## 📝 Usage Workflow
