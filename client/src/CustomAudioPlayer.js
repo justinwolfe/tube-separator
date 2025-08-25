@@ -604,6 +604,70 @@ const CustomAudioPlayer = ({
     }
   };
 
+  // Keyboard shortcuts: space (play/pause), 't' (cycle stems), arrows (seek)
+  useEffect(() => {
+    const isTypingTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName?.toLowerCase();
+      const editable = el.getAttribute && el.getAttribute('contenteditable');
+      return (
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        editable === '' ||
+        editable === 'true'
+      );
+    };
+
+    const cycleStem = () => {
+      const order = ['original', ...stems.map((s) => s.type)];
+      const idx = order.indexOf(activeStemRef.current || 'original');
+      const next = order[(idx + 1) % order.length];
+      if (next) handleStemToggle(next);
+    };
+
+    const onKeyDown = (e) => {
+      if (isTypingTarget(e.target)) return;
+
+      // Normalize key
+      const key = e.key;
+
+      // Space to toggle play/pause
+      if (key === ' ' || key === 'Spacebar' || e.code === 'Space') {
+        e.preventDefault();
+        togglePlayPause();
+        return;
+      }
+
+      // 't' to cycle stems (ignore modifiers)
+      if (
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        (key === 't' || key === 'T')
+      ) {
+        e.preventDefault();
+        cycleStem();
+        return;
+      }
+
+      // Arrow keys to seek
+      if (key === 'ArrowLeft') {
+        e.preventDefault();
+        seekBackward();
+        return;
+      }
+      if (key === 'ArrowRight') {
+        e.preventDefault();
+        seekForward();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [stems, seekBackward, seekForward, togglePlayPause, handleStemToggle]);
+
   // Handle transcript word click
   const handleTranscriptWordClick = (time) => {
     if (onSeekToTime) {

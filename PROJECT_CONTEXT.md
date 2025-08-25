@@ -275,6 +275,12 @@ pnpm run kill-ports        # Kill any conflicting processes
 - Preload behavior: audio elements switched to `preload="auto"` for the original and all stems to reduce switch latency.
 - Robust readiness handling: new stem playback begins muted under the same user activation, seeks to the captured time after metadata is available, then unmutes to avoid pops.
 
+### Keyboard Shortcuts
+
+- Space: Toggle play/pause
+- T: Cycle through available stems (Original → next stem ...)
+- Arrow Left/Right: Seek backward/forward 5s
+
 ## 📝 Usage Workflow
 
 ### Typical User Journey
