@@ -16,6 +16,8 @@ const CustomAudioPlayer = ({
   className = '',
   transcript = null,
   onSeekToTime,
+  videoUrl = null,
+  sourceAudioFilename = null,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -31,6 +33,9 @@ const CustomAudioPlayer = ({
   useEffect(() => {
     startPointRef.current = startPoint;
   }, [startPoint]);
+
+  // Video ref
+  const videoRef = useRef(null);
 
   // Audio refs
   const originalAudioRef = useRef(null);
@@ -244,6 +249,12 @@ const CustomAudioPlayer = ({
           const t = el.currentTime || 0;
           setCurrentTime(t);
           syncAllWaveforms(t);
+          const v = videoRef.current;
+          if (v && Math.abs((v.currentTime || 0) - t) > 0.08) {
+            try {
+              v.currentTime = t;
+            } catch {}
+          }
         }
       };
       el.addEventListener('timeupdate', onTime);
@@ -475,6 +486,14 @@ const CustomAudioPlayer = ({
         }
       });
 
+      // Sync attached video if present
+      const videoEl = videoRef.current;
+      if (videoEl && !isNaN(time) && time >= 0) {
+        try {
+          videoEl.currentTime = time;
+        } catch {}
+      }
+
       // Sync all waveforms
       syncAllWaveforms(time);
       // Keep marker stable on layout changes
@@ -505,6 +524,7 @@ const CustomAudioPlayer = ({
         Object.values(stemAudioRefs.current).forEach((audio) => {
           if (audio) audio.pause();
         });
+        if (videoRef.current) videoRef.current.pause();
         setIsPlaying(false);
       } else {
         // Determine resume point honoring startPoint
@@ -526,6 +546,11 @@ const CustomAudioPlayer = ({
             : stemAudioRefs.current[activeStem];
 
         if (activeAudio) await activeAudio.play();
+        if (videoRef.current) {
+          try {
+            await videoRef.current.play();
+          } catch {}
+        }
         setIsPlaying(true);
       }
     } catch (error) {
@@ -656,6 +681,7 @@ const CustomAudioPlayer = ({
       Object.values(stemAudioRefs.current).forEach((audio) => {
         if (audio) audio.pause();
       });
+      if (videoRef.current) videoRef.current.pause();
 
       // Update active stem and sync position globally
       setActiveStem(stemType);
@@ -690,6 +716,11 @@ const CustomAudioPlayer = ({
         try {
           if (!Number.isNaN(currentPlayTime) && currentPlayTime >= 0) {
             nextAudio.currentTime = currentPlayTime;
+            if (videoRef.current) {
+              try {
+                videoRef.current.currentTime = currentPlayTime;
+              } catch {}
+            }
           }
         } catch {}
 
@@ -701,6 +732,11 @@ const CustomAudioPlayer = ({
         try {
           await nextAudio.play();
         } catch {}
+        if (videoRef.current) {
+          try {
+            await videoRef.current.play();
+          } catch {}
+        }
         setIsPlaying(true);
       }
     } catch (error) {
@@ -1026,8 +1062,47 @@ const CustomAudioPlayer = ({
   const displayTime = isDragging ? dragTime : currentTime;
   const progressPercentage = duration > 0 ? (displayTime / duration) * 100 : 0;
 
+  // Export current selection to video via backend
+  const handleExportVideo = async () => {
+    try {
+      if (!sourceAudioFilename) return;
+      const resp = await fetch('/api/export-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: sourceAudioFilename,
+          stemType: activeStem,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.error || 'Export failed');
+      }
+      // Trigger browser download
+      window.open(data.downloadUrl, '_blank');
+    } catch (e) {
+      console.error('export failed', e);
+      alert(e.message || 'Export failed');
+    }
+  };
+
   return (
     <div className={`custom-audio-player ${className}`}>
+      {/* Optional Video Display */}
+      {videoUrl && (
+        <div className="video-container">
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            preload="metadata"
+            playsInline
+            controls={false}
+            muted={true}
+            className="player-video"
+          />
+        </div>
+      )}
+
       {/* Multi-Waveform Display */}
       <div className="waveform-container">
         <div ref={waveformRef} className="multi-waveform" />
@@ -1090,6 +1165,16 @@ const CustomAudioPlayer = ({
         <button className="seek-btn" onClick={seekForward}>
           ››
         </button>
+
+        {videoUrl && (
+          <button
+            className="seek-btn"
+            onClick={handleExportVideo}
+            title="export video with current stem audio"
+          >
+            ⬇︎
+          </button>
+        )}
       </div>
 
       {/* Transcript Section */}

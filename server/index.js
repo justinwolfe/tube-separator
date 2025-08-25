@@ -347,7 +347,7 @@ fastify.post('/api/video-info', async (request, reply) => {
 
 // Route to download video
 fastify.post('/api/download', async (request, reply) => {
-  const { url, format = 'bestaudio/best' } = request.body;
+  const { url, format = 'bestaudio/best', withVideo = false } = request.body;
 
   if (!url) {
     return reply.code(400).send({ error: 'URL is required' });
@@ -400,35 +400,73 @@ fastify.post('/api/download', async (request, reply) => {
           .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special characters
           .replace(/\s+/g, '_') // Replace spaces with underscores
           .substring(0, 50); // Limit length
-        const filename = `${sanitizedTitle}_${timestamp}`;
+        const base = `${sanitizedTitle}_${timestamp}`;
 
-        // Download video using yt-dlp
-        const ytdlp = spawn('yt-dlp', [
+        // Build yt-dlp args to extract MP3 always
+        const audioArgs = [
           '-f',
           format,
           '--extract-audio',
           '--audio-format',
           'mp3',
           '-o',
-          path.join(downloadsDir, `${filename}.%(ext)s`),
+          path.join(downloadsDir, `${base}.%(ext)s`),
           normalizedUrl,
-        ]);
+        ];
 
-        let error = '';
+        // If withVideo, also grab a 720p mp4 best-effort copy as separate run
+        const downloadAudio = () =>
+          new Promise((res, rej) => {
+            const ytdlp = spawn('yt-dlp', audioArgs);
+            let error = '';
+            ytdlp.stderr.on('data', (chunk) => {
+              error += chunk;
+            });
+            ytdlp.on('close', (code) => {
+              if (code === 0) return res(null);
+              return rej(new Error(error || 'Audio download failed'));
+            });
+          });
 
-        ytdlp.stderr.on('data', (chunk) => {
-          error += chunk;
-        });
+        const downloadVideoIfRequested = () =>
+          new Promise((res, rej) => {
+            if (!withVideo) return res(null);
+            // best 720p or lower MP4; fallback to mp4 if 720 not available
+            const videoFormat =
+              'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best';
+            const videoOutput = path.join(downloadsDir, `${base}.mp4`);
+            const args = [
+              '-f',
+              videoFormat,
+              '-o',
+              videoOutput,
+              '--merge-output-format',
+              'mp4',
+              normalizedUrl,
+            ];
+            const ytdlpVid = spawn('yt-dlp', args);
+            let vErr = '';
+            ytdlpVid.stderr.on('data', (c) => (vErr += c));
+            ytdlpVid.on('close', (code) => {
+              if (code === 0) return res(videoOutput);
+              // Resolve with null if video fails, we still return audio
+              console.warn('720p video download failed:', vErr);
+              return res(null);
+            });
+          });
 
-        ytdlp.on('close', (code) => {
-          if (code === 0) {
-            // Find the downloaded file
+        (async () => {
+          try {
+            await downloadAudio();
+            const videoPath = await downloadVideoIfRequested();
+
+            // Find the downloaded audio file
             const files = fs.readdirSync(downloadsDir);
-            const downloadedFile = files.find((file) =>
-              file.startsWith(filename)
+            const downloadedAudioFile = files.find(
+              (file) => file.startsWith(base) && file.endsWith('.mp3')
             );
 
-            if (downloadedFile) {
+            if (downloadedAudioFile) {
               // Save metadata
               const metadata = {
                 originalUrl: url,
@@ -437,35 +475,42 @@ fastify.post('/api/download', async (request, reply) => {
                 duration: videoInfo.duration,
                 thumbnail: videoInfo.thumbnail,
                 downloadedAt: new Date().toISOString(),
-                filename: downloadedFile,
-                stems: [], // Will be populated when stems are separated
+                filename: downloadedAudioFile,
+                videoFilename: videoPath ? path.basename(videoPath) : null,
+                stems: [],
               };
 
-              saveMetadata(downloadedFile, metadata);
+              saveMetadata(downloadedAudioFile, metadata);
 
               resolve(
                 reply.send({
                   success: true,
-                  filename: downloadedFile,
-                  streamUrl: `/api/file/${downloadedFile}`,
-                  downloadUrl: `/api/download/${downloadedFile}`,
-                  canSeparateStems: !!FADR_API_KEY, // Include stem separation capability
-                  canGenerateTranscript: !!OPENAI_API_KEY, // Include transcript generation capability
+                  filename: downloadedAudioFile,
+                  streamUrl: `/api/file/${downloadedAudioFile}`,
+                  downloadUrl: `/api/download/${downloadedAudioFile}`,
+                  videoStreamUrl: metadata.videoFilename
+                    ? `/api/file/${metadata.videoFilename}`
+                    : null,
+                  videoDownloadUrl: metadata.videoFilename
+                    ? `/api/download/${metadata.videoFilename}`
+                    : null,
+                  canSeparateStems: !!FADR_API_KEY,
+                  canGenerateTranscript: !!OPENAI_API_KEY,
                 })
               );
             } else {
               resolve(
                 reply.code(500).send({
-                  error: 'Download completed but file not found',
+                  error: 'Download completed but audio file not found',
                 })
               );
             }
-          } else {
+          } catch (e) {
             resolve(
-              reply.code(400).send({ error: error || 'Download failed' })
+              reply.code(400).send({ error: e.message || 'Download failed' })
             );
           }
-        });
+        })();
       });
     });
   } catch (err) {
@@ -912,7 +957,10 @@ fastify.get('/api/file/:filename', async (request, reply) => {
     const fileSize = stat.size;
     const range = request.headers.range;
 
-    // Support range requests for audio streaming
+    const ext = path.extname(filename).toLowerCase();
+    const isVideo = ext === '.mp4' || ext === '.webm' || ext === '.mov';
+    const contentType = isVideo ? 'video/mp4' : 'audio/mpeg';
+
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
@@ -925,14 +973,14 @@ fastify.get('/api/file/:filename', async (request, reply) => {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunksize,
-        'Content-Type': 'audio/mpeg',
+        'Content-Type': contentType,
       });
       reply.code(206);
       return reply.send(file);
     } else {
       reply.headers({
         'Content-Length': fileSize,
-        'Content-Type': 'audio/mpeg',
+        'Content-Type': contentType,
       });
       return reply.send(fs.createReadStream(filePath));
     }
@@ -947,9 +995,13 @@ fastify.get('/api/download/:filename', async (request, reply) => {
   const filePath = path.join(downloadsDir, filename);
 
   if (fs.existsSync(filePath)) {
+    const ext = path.extname(filename).toLowerCase();
+    const isVideo = ext === '.mp4' || ext === '.webm' || ext === '.mov';
+    const contentType = isVideo ? 'video/mp4' : 'audio/mpeg';
+
     reply.headers({
       'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Type': 'audio/mpeg',
+      'Content-Type': contentType,
     });
     return reply.send(fs.createReadStream(filePath));
   } else {
@@ -1053,6 +1105,95 @@ fastify.get('/api/downloads', async (request, reply) => {
     return reply.send(fileList);
   } catch (err) {
     return reply.code(500).send({ error: 'Failed to list downloads' });
+  }
+});
+
+// Add export endpoint: mux selected stem audio with downloaded video at same duration
+fastify.post('/api/export-video', async (request, reply) => {
+  const { filename, stemType = 'original' } = request.body || {};
+
+  if (!filename) {
+    return reply.code(400).send({ error: 'Filename is required' });
+  }
+
+  try {
+    const metadata = loadMetadata(filename);
+    if (!metadata || !metadata.videoFilename) {
+      return reply
+        .code(400)
+        .send({ error: 'No associated video found for this audio file' });
+    }
+
+    const videoPath = path.join(downloadsDir, metadata.videoFilename);
+    const audioPath = path.join(downloadsDir, filename);
+
+    // Determine audio track path based on stem selection
+    let chosenAudioPath = audioPath;
+    if (stemType && stemType !== 'original') {
+      const stemFilename = `${path.parse(filename).name}_${stemType}.mp3`;
+      const stemPath = path.join(downloadsDir, stemFilename);
+      if (fs.existsSync(stemPath)) {
+        chosenAudioPath = stemPath;
+      } else {
+        return reply
+          .code(400)
+          .send({ error: `Stem file not found: ${stemType}` });
+      }
+    }
+
+    // Build output filename
+    const outName = `${
+      path.parse(metadata.videoFilename).name
+    }_${stemType}.mp4`;
+    const outPath = path.join(downloadsDir, outName);
+
+    // ffmpeg to replace audio while keeping video stream, re-encode audio to aac
+    await new Promise((resolve, reject) => {
+      const ff = spawn('ffmpeg', [
+        '-y',
+        '-i',
+        videoPath,
+        '-i',
+        chosenAudioPath,
+        '-map',
+        '0:v:0',
+        '-map',
+        '1:a:0',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '18',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-movflags',
+        '+faststart',
+        '-shortest',
+        outPath,
+      ]);
+      let err = '';
+      ff.stderr.on('data', (c) => (err += c));
+      ff.on('close', (code) => {
+        if (code === 0) return resolve(null);
+        return reject(new Error(err || 'ffmpeg export failed'));
+      });
+    });
+
+    // Return links
+    return reply.send({
+      success: true,
+      filename: path.basename(outPath),
+      streamUrl: `/api/file/${path.basename(outPath)}`,
+      downloadUrl: `/api/download/${path.basename(outPath)}`,
+    });
+  } catch (e) {
+    console.error('export-video error:', e);
+    return reply.code(500).send({ error: e.message || 'Export failed' });
   }
 });
 

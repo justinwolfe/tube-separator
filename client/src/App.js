@@ -112,17 +112,21 @@ function App() {
     }
   };
 
-  const handleDownload = async (format = 'best') => {
+  const handleDownload = async (
+    format = 'bestaudio/best',
+    withVideo = false
+  ) => {
     setDownloading(true);
     setSeparatingStems(true);
     setError('');
     setExtractionResult(null);
 
     try {
-      // First download the audio
+      // First download the audio (and optional video)
       const downloadResponse = await axios.post('/api/download', {
         url,
         format,
+        withVideo,
       });
       const downloadData = downloadResponse.data;
 
@@ -483,6 +487,8 @@ function MainView({
                 stems={extractionResult.stems || []}
                 className="main-player"
                 transcript={transcripts[extractionResult.filename]}
+                videoUrl={extractionResult.videoStreamUrl || null}
+                sourceAudioFilename={extractionResult.filename}
               />
               {extractionResult.processingStems && (
                 <div className="stem-progress">
@@ -541,11 +547,19 @@ function MainView({
           ) : (
             <div className="download-options">
               <button
-                onClick={() => handleDownload('bestaudio/best')}
+                onClick={() => handleDownload()}
                 disabled={downloading || separatingStems}
                 className="download-btn"
               >
                 process
+              </button>
+              <button
+                onClick={() => handleDownload(undefined, true)}
+                disabled={downloading || separatingStems}
+                className="download-btn"
+                style={{ marginLeft: 10 }}
+              >
+                process + video (≤720p)
               </button>
             </div>
           )}
@@ -774,6 +788,8 @@ function UploadView({
               stems={extractionResult.stems || []}
               className="main-player"
               transcript={transcripts[extractionResult.filename]}
+              videoUrl={extractionResult.videoStreamUrl || null}
+              sourceAudioFilename={extractionResult.filename}
             />
             {extractionResult.processingStems && (
               <div className="stem-progress">
@@ -925,6 +941,12 @@ function SavedFileItem({
             title={metadata?.title || original.filename}
             className="saved-player"
             transcript={transcripts[original.filename]}
+            videoUrl={
+              metadata?.videoFilename
+                ? `/api/file/${metadata.videoFilename}`
+                : null
+            }
+            sourceAudioFilename={original.filename}
           />
 
           {/* Transcript Generation for saved files */}

@@ -74,6 +74,7 @@ sampler/
 ### 4. Advanced Audio Player
 
 - **Multi-Waveform Visualization**: Multiple stacked waveforms showing original track + all stems simultaneously
+- **Optional Video Surface**: When available, a video element renders above the waveforms and stays time-synced during play, seek, and stem switches
 - **Synchronized Playback Position**: All waveforms display the same cursor position and progress
 - **Interactive Stem Switching**: Click on any waveform to switch to that stem for playback
 - **Active Stem Highlighting**: Visual styling to indicate which stem is currently playing
@@ -107,7 +108,9 @@ sampler/
 ### Video Processing
 
 - `POST /api/video-info` - Extract YouTube video metadata
-- `POST /api/download` - Download YouTube video as MP3
+- `POST /api/download` - Download YouTube video as MP3, optionally also download MP4 video (<=720p)
+  - Body: `{ url: string, format?: string, withVideo?: boolean }`
+  - Response adds `videoStreamUrl` and `videoDownloadUrl` when `withVideo` succeeds
 - `POST /api/upload` - Upload and process video/audio files
 
 ### AI Services
@@ -119,8 +122,11 @@ sampler/
 
 ### File Management
 
-- `GET /api/file/:filename` - Stream audio files (supports range requests)
-- `GET /api/download/:filename` - Force download files
+- `GET /api/file/:filename` - Stream audio or video files (supports range requests; correct MIME)
+- `GET /api/download/:filename` - Force download audio or video
+- `POST /api/export-video` - Export an MP4 by muxing the selected stem audio with the downloaded video
+  - Body: `{ filename: string /* base audio filename */ , stemType?: 'original'|'vocals'|'drums'|'bass'|'melodies'|'instrumental'|'other' }`
+  - Output: MP4 with video stream copied and audio re-encoded to AAC; length is shortest of A/V
 - `GET /api/saved-files` - List all files with metadata and stems
 - `GET /api/downloads` - Simple file listing
 

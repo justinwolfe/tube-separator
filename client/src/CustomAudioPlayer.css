@@ -479,3 +479,20 @@
     margin: 1px 1px;
   }
 }
+
+.video-container {
+  width: 100%;
+  margin-bottom: 18px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.player-video {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+  background: #000;
+}
