@@ -275,6 +275,11 @@ pnpm run kill-ports        # Kill any conflicting processes
 - Preload behavior: audio elements switched to `preload="auto"` for the original and all stems to reduce switch latency.
 - Robust readiness handling: new stem playback begins muted under the same user activation, seeks to the captured time after metadata is available, then unmutes to avoid pops.
 
+### Layout & Responsiveness (December 2024)
+
+- Landscape optimizations: increased stacked waveform heights and spacing on landscape screens, with wider container max-width on large landscape viewports to make better use of horizontal space.
+- Active waveform styling: the currently active stem container is now borderless/edgeless to emphasize focus and reduce visual clutter.
+
 ### Keyboard Shortcuts
 
 - Space: Toggle play/pause
