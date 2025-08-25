@@ -1,4 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
+import { createPortal } from 'react-dom';
 import './CustomAudioPlayer.css';
 import WaveSurfer from 'wavesurfer.js';
 
@@ -30,6 +37,9 @@ const CustomAudioPlayer = ({
   // Multi-waveform refs
   const waveformRefs = useRef({});
   const wavesurferRefs = useRef({});
+
+  // Lyrics mount ref (below vocals stem container)
+  const lyricsMountRef = useRef(null);
 
   // Performance refs
   const animationFrameRef = useRef(null);
@@ -190,8 +200,22 @@ const CustomAudioPlayer = ({
     waveformRefs.current = {};
     wavesurferRefs.current = {};
 
+    // Clear any existing lyrics mount
+    if (lyricsMountRef.current && lyricsMountRef.current.parentNode) {
+      try {
+        lyricsMountRef.current.parentNode.removeChild(lyricsMountRef.current);
+      } catch {}
+    }
+    lyricsMountRef.current = null;
+
     // Clear DOM container
     waveformRef.current.innerHTML = '';
+
+    // Create a lyrics mount ABOVE all waveforms (so it appears before Original)
+    const globalLyricsMount = document.createElement('div');
+    globalLyricsMount.className = 'lyrics-line-mount';
+    waveformRef.current.appendChild(globalLyricsMount);
+    lyricsMountRef.current = globalLyricsMount;
 
     // Get all tracks (original + stems)
     const tracks = [
@@ -312,6 +336,12 @@ const CustomAudioPlayer = ({
       waveformRefs.current = {};
       wavesurferRefs.current = {};
       wavesurferRef.current = null;
+      if (lyricsMountRef.current && lyricsMountRef.current.parentNode) {
+        try {
+          lyricsMountRef.current.parentNode.removeChild(lyricsMountRef.current);
+        } catch {}
+      }
+      lyricsMountRef.current = null;
     };
   }, [originalTrack, stems, syncOtherWaveforms]);
 
@@ -748,6 +778,98 @@ const CustomAudioPlayer = ({
     );
   };
 
+  // Build mapping from formatted lines to word index ranges [start, end)
+  const lineWordRanges = useMemo(() => {
+    if (!transcript || !transcript.formattedText || !transcript.words)
+      return [];
+    const lines = transcript.formattedText.split('\n');
+    let idx = 0;
+    const ranges = [];
+    lines.forEach((line) => {
+      const start = idx;
+      const tokens = line.split(/(\s+)/);
+      tokens.forEach((token) => {
+        if (token && !/^\s+$/.test(token) && idx < transcript.words.length) {
+          idx += 1;
+        }
+      });
+      ranges.push({ start, end: idx, line });
+    });
+    return ranges;
+  }, [transcript]);
+
+  // Determine current word index from time
+  const currentWordIndex = useMemo(() => {
+    if (!transcript || !transcript.words) return -1;
+    const i = transcript.words.findIndex(
+      (w) => currentTime >= w.start && currentTime <= w.end
+    );
+    if (i !== -1) return i;
+    if (currentTime < (transcript.words[0]?.start ?? 0)) return 0;
+    return transcript.words.length - 1;
+  }, [transcript, currentTime]);
+
+  // Current line index based on current word
+  const currentLineIndex = useMemo(() => {
+    if (currentWordIndex < 0 || lineWordRanges.length === 0) return -1;
+    for (let i = 0; i < lineWordRanges.length; i++) {
+      const r = lineWordRanges[i];
+      if (currentWordIndex >= r.start && currentWordIndex < r.end) return i;
+    }
+    return -1;
+  }, [currentWordIndex, lineWordRanges]);
+
+  // Render a single line with clickable, timestamped words
+  const renderSingleLyricLine = (lineIdx) => {
+    if (!transcript) return null;
+    // Always render a placeholder to avoid layout shift
+    if (lineIdx < 0 || lineIdx >= lineWordRanges.length || !transcript.words) {
+      return <div className="lyrics-line" />;
+    }
+    const { line, start } = lineWordRanges[lineIdx];
+    let wordIndex = start;
+    const tokens = line.split(/(\s+)/);
+    return (
+      <div className="lyrics-line">
+        {tokens.map((token, tokenIdx) => {
+          if (token === '') return null;
+          if (/^\s+$/.test(token)) {
+            return <span key={`l-${lineIdx}-${tokenIdx}`}>{token}</span>;
+          }
+          const leadingPunctMatch = token.match(/^[\(\[\{"'“‘]+/);
+          const trailingPunctMatch = token.match(/[\)\]\}"'”’!?,.:;]+$/);
+          const leadingPunct = leadingPunctMatch ? leadingPunctMatch[0] : '';
+          const trailingPunct = trailingPunctMatch ? trailingPunctMatch[0] : '';
+          const coreStart = leadingPunct.length;
+          const coreEnd = token.length - trailingPunct.length;
+          const core = token.slice(coreStart, coreEnd);
+
+          if (wordIndex < (transcript.words?.length || 0)) {
+            const wordObj = transcript.words[wordIndex++];
+            const isActive =
+              currentTime >= wordObj.start && currentTime <= wordObj.end;
+            return (
+              <React.Fragment key={`l-${lineIdx}-${tokenIdx}`}>
+                {leadingPunct}
+                <span
+                  className={`transcript-word ${isActive ? 'active' : ''}`}
+                  onClick={() => handleTranscriptWordClick(wordObj.start)}
+                  title={`${formatTime(wordObj.start)} - ${formatTime(
+                    wordObj.end
+                  )}`}
+                >
+                  {wordObj.word}
+                </span>
+                {trailingPunct}
+              </React.Fragment>
+            );
+          }
+          return <span key={`l-${lineIdx}-${tokenIdx}`}>{token}</span>;
+        })}
+      </div>
+    );
+  };
+
   const handleStemVolumeChange = (stemType, value) => {
     setStemVolumes((prev) => ({
       ...prev,
@@ -777,6 +899,14 @@ const CustomAudioPlayer = ({
       <div className="waveform-container">
         <div ref={waveformRef} className="multi-waveform" />
       </div>
+
+      {/* Vocals lyrics single-line feed (portal mounted under vocals container) */}
+      {lyricsMountRef.current &&
+        transcript &&
+        createPortal(
+          renderSingleLyricLine(currentLineIndex),
+          lyricsMountRef.current
+        )}
 
       {/* Hidden audio elements */}
       <audio

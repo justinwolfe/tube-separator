@@ -82,6 +82,7 @@ sampler/
 - **Range Requests**: Supports HTTP range requests for streaming
 - **Touch/Mobile Support**: Responsive touch controls and gestures
 - **Memory Management**: Proper cleanup of multiple WaveSurfer instances to prevent memory leaks
+- **Vocals Lyrics Single-Line Feed**: When `transcript.formattedText` and `transcript.words` are available, a time-synced single lyric line renders directly below the `vocals` waveform. Each word remains a timestamped link (click to seek), highlighting in real time during playback.
 
 ### 5. Transcript Generation & Display
 
@@ -274,6 +275,10 @@ pnpm run kill-ports        # Kill any conflicting processes
 - Seamless stem switching: when clicking a different stem waveform or label, playback continues immediately from the same timestamp without requiring manual pause/play.
 - Preload behavior: audio elements switched to `preload="auto"` for the original and all stems to reduce switch latency.
 - Robust readiness handling: new stem playback begins muted under the same user activation, seeks to the captured time after metadata is available, then unmutes to avoid pops.
+
+### Player UI Enhancements (December 2024)
+
+- Added a synced, single-line lyrics display mounted directly beneath the vocals stem container. It mirrors the transcript word behavior: clickable timestamped words and active-word highlighting. This is implemented via a portal in `client/src/CustomAudioPlayer.js` and styled in `client/src/CustomAudioPlayer.css`.
 
 ### Layout & Responsiveness (December 2024)
 
