@@ -73,12 +73,15 @@ sampler/
 
 ### 4. Advanced Audio Player
 
-- **Waveform Visualization**: WaveSurfer.js integration with interactive seeking
-- **Stem Switching**: Toggle between original and individual stems during playback
+- **Multi-Waveform Visualization**: Multiple stacked waveforms showing original track + all stems simultaneously
+- **Synchronized Playback Position**: All waveforms display the same cursor position and progress
+- **Interactive Stem Switching**: Click on any waveform to switch to that stem for playback
+- **Active Stem Highlighting**: Visual styling to indicate which stem is currently playing
+- **Individual Stem Labels**: Clear labels for Original, Vocals, Drums, Bass, Melodies, etc.
 - **Playback Controls**: Play/pause, seek forward/backward (5s), volume control
 - **Range Requests**: Supports HTTP range requests for streaming
-- **Synchronized Playback**: Multiple audio elements kept in perfect sync
 - **Touch/Mobile Support**: Responsive touch controls and gestures
+- **Memory Management**: Proper cleanup of multiple WaveSurfer instances to prevent memory leaks
 
 ### 5. Transcript Generation & Display
 

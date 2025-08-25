@@ -8,7 +8,57 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Waveform Styles */
+/* Multi-Waveform Styles */
+.multi-waveform {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.waveform-item {
+  position: relative;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 12px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.waveform-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.waveform-item.active {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.05);
+}
+
+.waveform-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 8px;
+  transition: all 0.3s ease;
+}
+
+.waveform-item.active .waveform-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.waveform-visual {
+  width: 100%;
+  height: 60px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Legacy waveform styles - kept for backward compatibility */
 .waveform-container {
   margin-bottom: 28px;
 }
@@ -164,7 +214,27 @@
     padding: 15px;
   }
 
-  /* Enhanced mobile timeline */
+  /* Multi-waveform responsive styles */
+  .multi-waveform {
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .waveform-item {
+    padding: 8px;
+  }
+
+  .waveform-label {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+  }
+
+  .waveform-visual {
+    height: 45px;
+  }
+
+  /* Enhanced mobile timeline - legacy */
   .waveform {
     height: 72px;
   }
