@@ -69,6 +69,33 @@ const CustomAudioPlayer = ({
     });
   }, []);
 
+  // Utility: wait for a single event with timeout
+  const waitForEventOnce = (element, eventName, timeoutMs = 1500) => {
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const onEvent = () => {
+        if (done) return;
+        done = true;
+        element.removeEventListener(eventName, onEvent);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        element.removeEventListener(eventName, onEvent);
+        resolve();
+      }, timeoutMs);
+      element.addEventListener(
+        eventName,
+        () => {
+          clearTimeout(timer);
+          onEvent();
+        },
+        { once: true }
+      );
+    });
+  };
+
   // Sync other waveforms (excluding the source to avoid recursion)
   const syncOtherWaveforms = useCallback((time, excludeType) => {
     isProgrammaticSeekRef.current = true;
@@ -131,6 +158,28 @@ const CustomAudioPlayer = ({
       originalAudio.removeEventListener('timeupdate', handleTimeUpdate);
     };
   }, [originalTrack, isDragging, syncAllWaveforms]);
+
+  // Keep visuals synced when playing a stem element
+  useEffect(() => {
+    const handlers = [];
+
+    Object.entries(stemAudioRefs.current).forEach(([type, el]) => {
+      if (!el) return;
+      const onTime = () => {
+        if (!isDragging && activeStemRef.current === type) {
+          const t = el.currentTime || 0;
+          setCurrentTime(t);
+          syncAllWaveforms(t);
+        }
+      };
+      el.addEventListener('timeupdate', onTime);
+      handlers.push([el, onTime]);
+    });
+
+    return () => {
+      handlers.forEach(([el, fn]) => el.removeEventListener('timeupdate', fn));
+    };
+  }, [stems, isDragging, syncAllWaveforms]);
 
   // Initialize WaveSurfer
   useEffect(() => {
@@ -313,6 +362,16 @@ const CustomAudioPlayer = ({
     [syncAllWaveforms]
   );
 
+  // Seek from any waveform and keep everything in sync
+  const seekAllFromWaveform = useCallback(
+    (targetTime, sourceType) => {
+      setCurrentTime(targetTime);
+      syncAudioElements(targetTime);
+      syncOtherWaveforms(targetTime, sourceType);
+    },
+    [syncAudioElements, syncOtherWaveforms]
+  );
+
   // Play/Pause functionality
   const togglePlayPause = async () => {
     const originalAudio = originalAudioRef.current;
@@ -444,42 +503,13 @@ const CustomAudioPlayer = ({
     };
   }, []);
 
-  // RAF-based transport sync from the active audio element
-  useEffect(() => {
-    if (rafSyncRef.current) cancelAnimationFrame(rafSyncRef.current);
-    if (!isPlaying) return;
-
-    const loop = () => {
-      const activeAudio = getActiveAudioUnsafe();
-      if (activeAudio && !isDragging) {
-        const t = activeAudio.currentTime || 0;
-        setCurrentTime(t);
-        syncAllWaveforms(t);
-      }
-      rafSyncRef.current = requestAnimationFrame(loop);
-    };
-
-    loop();
-
-    return () => {
-      if (rafSyncRef.current) cancelAnimationFrame(rafSyncRef.current);
-      rafSyncRef.current = null;
-    };
-  }, [
-    isPlaying,
-    activeStem,
-    getActiveAudioUnsafe,
-    isDragging,
-    syncAllWaveforms,
-  ]);
-
   // Handle stem selection
   const handleStemToggle = async (stemType) => {
     const originalAudio = originalAudioRef.current;
-    const wasPlaying = isPlaying;
+    const wasPlaying = isPlayingRef.current;
 
     try {
-      // Remember current time from active source
+      // Capture current time from the actively playing source for accurate resume
       const activeAudio =
         activeStem === 'original'
           ? originalAudio
@@ -488,24 +518,56 @@ const CustomAudioPlayer = ({
         ? activeAudio.currentTime
         : currentTime;
 
-      // Pause all
+      // Pause everything
       if (originalAudio) originalAudio.pause();
       Object.values(stemAudioRefs.current).forEach((audio) => {
         if (audio) audio.pause();
       });
 
-      // Update active stem and sync position
+      // Update active stem and sync position globally
       setActiveStem(stemType);
       syncAudioElements(currentPlayTime);
 
-      if (wasPlaying) {
-        // Small delay to ensure currentTime applies before play
-        await new Promise((r) => setTimeout(r, 10));
-        const nextAudio =
-          stemType === 'original'
-            ? originalAudio
-            : stemAudioRefs.current[stemType];
-        if (nextAudio) await nextAudio.play();
+      const nextAudio =
+        stemType === 'original'
+          ? originalAudio
+          : stemAudioRefs.current[stemType];
+
+      if (wasPlaying && nextAudio) {
+        // Start muted immediately to preserve user activation and avoid audio blips
+        const previousMuted = nextAudio.muted;
+        nextAudio.muted = true;
+
+        // Kick off load if needed
+        if (nextAudio.readyState < 1) {
+          try {
+            nextAudio.load();
+          } catch {}
+        }
+
+        // Start playback ASAP under user gesture
+        try {
+          await nextAudio.play();
+        } catch {}
+
+        // Ensure metadata, then seek to the captured time
+        if (nextAudio.readyState < 1) {
+          await waitForEventOnce(nextAudio, 'loadedmetadata', 1500);
+        }
+        try {
+          if (!Number.isNaN(currentPlayTime) && currentPlayTime >= 0) {
+            nextAudio.currentTime = currentPlayTime;
+          }
+        } catch {}
+
+        // Wait for seek to apply if possible, but don't block too long
+        await waitForEventOnce(nextAudio, 'seeked', 300).catch(() => {});
+
+        // Unmute and continue playing
+        nextAudio.muted = previousMuted;
+        try {
+          await nextAudio.play();
+        } catch {}
         setIsPlaying(true);
       }
     } catch (error) {
@@ -656,7 +718,7 @@ const CustomAudioPlayer = ({
       <audio
         ref={originalAudioRef}
         src={originalTrack}
-        preload="metadata"
+        preload="auto"
         volume={volume}
         style={{ display: 'none' }}
       />
@@ -666,7 +728,7 @@ const CustomAudioPlayer = ({
           key={stem.type}
           ref={(el) => (stemAudioRefs.current[stem.type] = el)}
           src={stem.streamUrl}
-          preload="metadata"
+          preload="auto"
           volume={stemVolumes[stem.type] || 0.8}
           style={{ display: 'none' }}
         />
