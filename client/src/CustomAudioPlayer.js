@@ -26,6 +26,11 @@ const CustomAudioPlayer = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [startPoint, setStartPoint] = useState(null);
+  const startPointRef = useRef(startPoint);
+  useEffect(() => {
+    startPointRef.current = startPoint;
+  }, [startPoint]);
 
   // Audio refs
   const originalAudioRef = useRef(null);
@@ -37,6 +42,62 @@ const CustomAudioPlayer = ({
   // Multi-waveform refs
   const waveformRefs = useRef({});
   const wavesurferRefs = useRef({});
+  const startMarkerRefs = useRef({});
+
+  // Create or update the persistent start marker across all waveforms
+  const createOrUpdateStartMarker = useCallback(() => {
+    try {
+      const currentStart = startPointRef.current;
+      const wsEntries = Object.entries(wavesurferRefs.current);
+      wsEntries.forEach(([stemType, ws]) => {
+        const container = waveformRefs.current[stemType];
+        if (!container || !ws) return;
+        const durationSec = ws.getDuration ? ws.getDuration() || 0 : 0;
+
+        // Remove marker if start is unset or duration unknown
+        if (currentStart == null || !(durationSec > 0)) {
+          const existing = startMarkerRefs.current[stemType];
+          if (existing && existing.parentNode) {
+            try {
+              existing.parentNode.removeChild(existing);
+            } catch {}
+          }
+          delete startMarkerRefs.current[stemType];
+          return;
+        }
+
+        // Ensure marker element exists
+        let marker = startMarkerRefs.current[stemType];
+        if (!marker) {
+          marker = document.createElement('div');
+          marker.className = 'start-marker';
+          marker.style.position = 'absolute';
+          marker.style.top = '0';
+          marker.style.bottom = '0';
+          marker.style.width = '2px';
+          marker.style.background = 'rgba(255, 0, 90, 0.9)';
+          marker.style.pointerEvents = 'none';
+          marker.style.zIndex = '5';
+          // Ensure container positioning context
+          if (!container.style.position) container.style.position = 'relative';
+          container.appendChild(marker);
+          startMarkerRefs.current[stemType] = marker;
+        }
+
+        // Position marker within the waveform visual area
+        const visualDiv = container.querySelector('.waveform-visual');
+        const targetWidth = visualDiv
+          ? visualDiv.clientWidth
+          : container.clientWidth;
+        const clamped = Math.min(Math.max(currentStart / durationSec, 0), 1);
+        const x = clamped * targetWidth;
+        const offsetLeft = visualDiv ? visualDiv.offsetLeft : 0;
+        marker.style.left = `${offsetLeft + x}px`;
+      });
+    } catch (e) {
+      // no-op safeguard
+    }
+  }, []);
 
   // Lyrics mount ref (below vocals stem container)
   const lyricsMountRef = useRef(null);
@@ -77,6 +138,8 @@ const CustomAudioPlayer = ({
     requestAnimationFrame(() => {
       isProgrammaticSeekRef.current = false;
     });
+    // keep marker visually aligned when time changes as widths may change
+    createOrUpdateStartMarker();
   }, []);
 
   // Utility: wait for a single event with timeout
@@ -126,6 +189,7 @@ const CustomAudioPlayer = ({
     requestAnimationFrame(() => {
       isProgrammaticSeekRef.current = false;
     });
+    createOrUpdateStartMarker();
   }, []);
 
   const getActiveAudioUnsafe = useCallback(() => {
@@ -199,6 +263,15 @@ const CustomAudioPlayer = ({
     Object.values(wavesurferRefs.current).forEach((ws) => ws?.destroy());
     waveformRefs.current = {};
     wavesurferRefs.current = {};
+    // Clear start markers
+    Object.values(startMarkerRefs.current).forEach((el) => {
+      if (el && el.parentNode) {
+        try {
+          el.parentNode.removeChild(el);
+        } catch {}
+      }
+    });
+    startMarkerRefs.current = {};
 
     // Clear any existing lyrics mount
     if (lyricsMountRef.current && lyricsMountRef.current.parentNode) {
@@ -296,12 +369,15 @@ const CustomAudioPlayer = ({
             isProgrammaticSeekRef.current = false;
           });
         }
+        // Ensure marker position once waveform is ready
+        createOrUpdateStartMarker();
       });
 
-      // Handle clicking on waveform to switch stem (only outside the visual)
-      container.addEventListener('click', (e) => {
-        if (e.target.closest('.waveform-visual')) return; // Let WaveSurfer handle seeking
-        handleStemToggle(track.type);
+      // Handle clicking anywhere in the container to select this stem
+      container.addEventListener('click', () => {
+        if (activeStemRef.current !== track.type) {
+          handleStemToggle(track.type);
+        }
       });
 
       const handleSeekProgress = (progress) => {
@@ -325,6 +401,10 @@ const CustomAudioPlayer = ({
             : null;
           if (t != null) seekAllFromWaveform(t, track.type);
         });
+        // Reposition markers after resize/render events WaveSurfer may emit
+        ws.on('redrawcomplete', () => {
+          createOrUpdateStartMarker();
+        });
       }
     });
 
@@ -336,6 +416,14 @@ const CustomAudioPlayer = ({
       waveformRefs.current = {};
       wavesurferRefs.current = {};
       wavesurferRef.current = null;
+      Object.values(startMarkerRefs.current).forEach((el) => {
+        if (el && el.parentNode) {
+          try {
+            el.parentNode.removeChild(el);
+          } catch {}
+        }
+      });
+      startMarkerRefs.current = {};
       if (lyricsMountRef.current && lyricsMountRef.current.parentNode) {
         try {
           lyricsMountRef.current.parentNode.removeChild(lyricsMountRef.current);
@@ -370,7 +458,8 @@ const CustomAudioPlayer = ({
         });
       }
     });
-  }, [activeStem]);
+    createOrUpdateStartMarker();
+  }, [activeStem, createOrUpdateStartMarker]);
 
   // Sync all audio elements
   const syncAudioElements = useCallback(
@@ -388,8 +477,10 @@ const CustomAudioPlayer = ({
 
       // Sync all waveforms
       syncAllWaveforms(time);
+      // Keep marker stable on layout changes
+      createOrUpdateStartMarker();
     },
-    [syncAllWaveforms]
+    [syncAllWaveforms, createOrUpdateStartMarker]
   );
 
   // Seek from any waveform and keep everything in sync
@@ -398,8 +489,9 @@ const CustomAudioPlayer = ({
       setCurrentTime(targetTime);
       syncAudioElements(targetTime);
       syncOtherWaveforms(targetTime, sourceType);
+      createOrUpdateStartMarker();
     },
-    [syncAudioElements, syncOtherWaveforms]
+    [syncAudioElements, syncOtherWaveforms, createOrUpdateStartMarker]
   );
 
   // Play/Pause functionality
@@ -415,8 +507,12 @@ const CustomAudioPlayer = ({
         });
         setIsPlaying(false);
       } else {
+        // Determine resume point honoring startPoint
+        const resumeAt = startPoint != null ? startPoint : currentTime;
+
         // Sync time before playing
-        syncAudioElements(currentTime);
+        setCurrentTime(resumeAt);
+        syncAudioElements(resumeAt);
 
         // Pause all, then play active only
         originalAudio.pause();
@@ -533,6 +629,13 @@ const CustomAudioPlayer = ({
     };
   }, []);
 
+  // Keep start marker positioned on window resize
+  useEffect(() => {
+    const onResize = () => createOrUpdateStartMarker();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [createOrUpdateStartMarker]);
+
   // Handle stem selection
   const handleStemToggle = async (stemType) => {
     const originalAudio = originalAudioRef.current;
@@ -619,7 +722,7 @@ const CustomAudioPlayer = ({
   const seekBackward = () => {
     const originalAudio = originalAudioRef.current;
     if (originalAudio) {
-      const newTime = Math.max(0, currentTime - 5);
+      const newTime = Math.max(0, currentTime - 2);
       setCurrentTime(newTime);
       syncAudioElements(newTime);
     }
@@ -628,7 +731,7 @@ const CustomAudioPlayer = ({
   const seekForward = () => {
     const originalAudio = originalAudioRef.current;
     if (originalAudio) {
-      const newTime = Math.min(duration, currentTime + 5);
+      const newTime = Math.min(duration, currentTime + 2);
       setCurrentTime(newTime);
       syncAudioElements(newTime);
     }
@@ -681,6 +784,21 @@ const CustomAudioPlayer = ({
         return;
       }
 
+      // 'f' to set start point at current time
+      if (
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        (key === 'f' || key === 'F')
+      ) {
+        e.preventDefault();
+        const t = isDragging ? dragTime : currentTime;
+        setStartPoint(t);
+        // Sync markers right away
+        setTimeout(() => createOrUpdateStartMarker(), 0);
+        return;
+      }
+
       // Arrow keys to seek
       if (key === 'ArrowLeft') {
         e.preventDefault();
@@ -696,7 +814,22 @@ const CustomAudioPlayer = ({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [stems, seekBackward, seekForward, togglePlayPause, handleStemToggle]);
+  }, [
+    stems,
+    seekBackward,
+    seekForward,
+    togglePlayPause,
+    handleStemToggle,
+    isDragging,
+    dragTime,
+    currentTime,
+    createOrUpdateStartMarker,
+  ]);
+
+  // Reposition marker when startPoint changes (e.g., via 'f')
+  useEffect(() => {
+    createOrUpdateStartMarker();
+  }, [startPoint]);
 
   // Handle transcript word click
   const handleTranscriptWordClick = (time) => {
@@ -899,6 +1032,7 @@ const CustomAudioPlayer = ({
       <div className="waveform-container">
         <div ref={waveformRef} className="multi-waveform" />
       </div>
+      {/* CSS: .start-marker is positioned absolutely within each waveform item */}
 
       {/* Vocals lyrics single-line feed (portal mounted under vocals container) */}
       {lyricsMountRef.current &&

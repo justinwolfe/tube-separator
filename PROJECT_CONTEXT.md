@@ -280,6 +280,10 @@ pnpm run kill-ports        # Kill any conflicting processes
 
 - Added a synced, single-line lyrics display mounted directly beneath the vocals stem container. It mirrors the transcript word behavior: clickable timestamped words and active-word highlighting. This is implemented via a portal in `client/src/CustomAudioPlayer.js` and styled in `client/src/CustomAudioPlayer.css`.
 
+### Start Point Marker (December 2024)
+
+- Press `F` to set a persistent start point at the current playback time. A vertical start marker is rendered across all stacked waveforms and stays synchronized as you seek or resize. Playback will resume from this start point when pressing play if the current position is before it. The marker is cleaned up properly during re-initialization and unmount.
+
 ### Layout & Responsiveness (December 2024)
 
 - Landscape optimizations: increased stacked waveform heights and spacing on landscape screens, with wider container max-width on large landscape viewports to make better use of horizontal space.
@@ -290,6 +294,7 @@ pnpm run kill-ports        # Kill any conflicting processes
 - Space: Toggle play/pause
 - T: Cycle through available stems (Original → next stem ...)
 - Arrow Left/Right: Seek backward/forward 5s
+- F: Set start point and display a synchronized marker across all waveforms
 
 ## 📝 Usage Workflow
 
