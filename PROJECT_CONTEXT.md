@@ -22,8 +22,17 @@ sampler/
 │   └── vite.config.js     # Vite configuration with proxy to backend
 ├── server/                 # Fastify backend (High-performance Node.js)
 │   ├── index.js           # Main server with all API endpoints
-│   ├── downloads/         # Storage for downloaded audio files
-│   ├── metadata/          # JSON metadata for each file
+│   ├── downloads/         # Organized storage: each song in its own folder
+│   │   ├── [song_folder]/ # Individual folders for each song/upload
+│   │   │   ├── original.mp3      # Original audio file
+│   │   │   ├── *_vocals.mp3      # Stem files (if processed)
+│   │   │   ├── *_drums.mp3
+│   │   │   ├── *_bass.mp3
+│   │   │   ├── *_instrumental.mp3
+│   │   │   ├── *_other.mp3
+│   │   │   ├── video.mp4         # Video file (if downloaded)
+│   │   │   └── metadata.json     # Song metadata and processing info
+│   ├── metadata/          # Legacy metadata directory (for backwards compatibility)
 │   ├── python/            # Python environment (only .venv exists)
 │   ├── package.json       # Server dependencies
 │   └── nodemon.json       # Development server configuration
@@ -97,11 +106,14 @@ sampler/
 
 ### 6. File Management System
 
+- **Organized Storage**: Each song/upload gets its own dedicated folder containing all related assets
+- **Folder Structure**: Original audio, stems, video (if available), and metadata all grouped together
 - **Saved Files Tab**: Browse all downloaded files with metadata
-- **Metadata Storage**: JSON files storing video info, stems, transcripts
-- **File Grouping**: Original files automatically grouped with their stems
+- **Metadata Storage**: `metadata.json` files stored within each song folder
+- **File Grouping**: Original files automatically grouped with their stems and video
 - **Sorting**: Files sorted by creation date (newest first)
-- **File Serving**: Stream files for playback or force download
+- **File Serving**: Stream files for playback or force download with folder-aware URLs
+- **Legacy Support**: Backwards compatible with old flat file structure
 
 ## 🔌 API Endpoints
 
@@ -122,12 +134,16 @@ sampler/
 
 ### File Management
 
-- `GET /api/file/:filename` - Stream audio or video files (supports range requests; correct MIME)
-- `GET /api/download/:filename` - Force download audio or video
+- `GET /api/file/:folderOrFilename/:filename?` - Stream audio or video files (supports range requests; correct MIME)
+  - New: `/api/file/folder_name/filename.mp3` (organized structure)
+  - Legacy: `/api/file/filename.mp3` (backwards compatible)
+- `GET /api/download/:folderOrFilename/:filename?` - Force download audio or video
+  - New: `/api/download/folder_name/filename.mp3` (organized structure)
+  - Legacy: `/api/download/filename.mp3` (backwards compatible)
 - `POST /api/export-video` - Export an MP4 by muxing the selected stem audio with the downloaded video
   - Body: `{ filename: string /* base audio filename */ , stemType?: 'original'|'vocals'|'drums'|'bass'|'melodies'|'instrumental'|'other' }`
   - Output: MP4 with video stream copied and audio re-encoded to AAC; length is shortest of A/V
-- `GET /api/saved-files` - List all files with metadata and stems
+- `GET /api/saved-files` - List all files with metadata and stems (returns organized folder structure)
 - `GET /api/downloads` - Simple file listing
 
 ## 🎨 User Interface

@@ -74,9 +74,16 @@ if (!fs.existsSync(metadataDir)) {
 }
 
 // Helper function to save metadata
-function saveMetadata(filename, data) {
+function saveMetadata(filename, data, folderPath = null) {
   try {
-    const metadataFile = path.join(metadataDir, `${filename}.json`);
+    let metadataFile;
+    if (folderPath) {
+      // New organized structure: save metadata.json in the song folder
+      metadataFile = path.join(folderPath, 'metadata.json');
+    } else {
+      // Legacy structure: save in metadata directory
+      metadataFile = path.join(metadataDir, `${filename}.json`);
+    }
     // Use atomic write to prevent partial writes
     const tempFile = metadataFile + '.tmp';
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2));
@@ -87,9 +94,16 @@ function saveMetadata(filename, data) {
 }
 
 // Helper function to load metadata
-function loadMetadata(filename) {
+function loadMetadata(filename, folderPath = null) {
   try {
-    const metadataFile = path.join(metadataDir, `${filename}.json`);
+    let metadataFile;
+    if (folderPath) {
+      // New organized structure: load metadata.json from the song folder
+      metadataFile = path.join(folderPath, 'metadata.json');
+    } else {
+      // Legacy structure: load from metadata directory
+      metadataFile = path.join(metadataDir, `${filename}.json`);
+    }
     if (fs.existsSync(metadataFile)) {
       return JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
     }
@@ -105,6 +119,13 @@ function getBaseFilename(filename) {
     /_(vocals|drums|bass|instrumental|melodies|other)\.mp3$/,
     '.mp3'
   );
+}
+
+// Helper function to create a safe folder name from filename
+function createSafeFolderName(filename) {
+  // Remove the .mp3 extension and create a safe folder name
+  const baseName = path.parse(filename).name;
+  return baseName.replace(/[^a-zA-Z0-9\s-_]/g, '_').substring(0, 100);
 }
 
 // Helper function to normalize YouTube URLs (including mobile URLs)
@@ -467,6 +488,31 @@ fastify.post('/api/download', async (request, reply) => {
             );
 
             if (downloadedAudioFile) {
+              // Create organized folder structure
+              const folderName = createSafeFolderName(downloadedAudioFile);
+              const songFolderPath = path.join(downloadsDir, folderName);
+
+              // Create folder if it doesn't exist
+              if (!fs.existsSync(songFolderPath)) {
+                fs.mkdirSync(songFolderPath, { recursive: true });
+              }
+
+              // Move audio file to organized folder
+              const audioSrc = path.join(downloadsDir, downloadedAudioFile);
+              const audioDest = path.join(songFolderPath, downloadedAudioFile);
+              if (fs.existsSync(audioSrc) && !fs.existsSync(audioDest)) {
+                fs.renameSync(audioSrc, audioDest);
+              }
+
+              // Move video file to organized folder if it exists
+              if (videoPath) {
+                const videoFilename = path.basename(videoPath);
+                const videoDest = path.join(songFolderPath, videoFilename);
+                if (fs.existsSync(videoPath) && !fs.existsSync(videoDest)) {
+                  fs.renameSync(videoPath, videoDest);
+                }
+              }
+
               // Save metadata
               const metadata = {
                 originalUrl: url,
@@ -478,24 +524,26 @@ fastify.post('/api/download', async (request, reply) => {
                 filename: downloadedAudioFile,
                 videoFilename: videoPath ? path.basename(videoPath) : null,
                 stems: [],
+                folderName: folderName,
               };
 
-              saveMetadata(downloadedAudioFile, metadata);
+              saveMetadata(downloadedAudioFile, metadata, songFolderPath);
 
               resolve(
                 reply.send({
                   success: true,
                   filename: downloadedAudioFile,
-                  streamUrl: `/api/file/${downloadedAudioFile}`,
-                  downloadUrl: `/api/download/${downloadedAudioFile}`,
+                  streamUrl: `/api/file/${folderName}/${downloadedAudioFile}`,
+                  downloadUrl: `/api/download/${folderName}/${downloadedAudioFile}`,
                   videoStreamUrl: metadata.videoFilename
-                    ? `/api/file/${metadata.videoFilename}`
+                    ? `/api/file/${folderName}/${metadata.videoFilename}`
                     : null,
                   videoDownloadUrl: metadata.videoFilename
-                    ? `/api/download/${metadata.videoFilename}`
+                    ? `/api/download/${folderName}/${metadata.videoFilename}`
                     : null,
                   canSeparateStems: !!FADR_API_KEY,
                   canGenerateTranscript: !!OPENAI_API_KEY,
+                  folderName: folderName,
                 })
               );
             } else {
@@ -614,6 +662,22 @@ fastify.post('/api/upload', async (request, reply) => {
               }
             }
 
+            // Create organized folder structure
+            const folderName = createSafeFolderName(outputFilename);
+            const songFolderPath = path.join(downloadsDir, folderName);
+
+            // Create folder if it doesn't exist
+            if (!fs.existsSync(songFolderPath)) {
+              fs.mkdirSync(songFolderPath, { recursive: true });
+            }
+
+            // Move audio file to organized folder
+            const audioSrc = path.join(downloadsDir, outputFilename);
+            const audioDest = path.join(songFolderPath, outputFilename);
+            if (fs.existsSync(audioSrc) && !fs.existsSync(audioDest)) {
+              fs.renameSync(audioSrc, audioDest);
+            }
+
             // Save metadata
             const metadata = {
               originalFilename: data.filename,
@@ -623,20 +687,22 @@ fastify.post('/api/upload', async (request, reply) => {
               title: data.filename.replace(/\.[^/.]+$/, ''), // Remove extension
               stems: [],
               isUploaded: true,
+              folderName: folderName,
             };
 
-            saveMetadata(outputFilename, metadata);
+            saveMetadata(outputFilename, metadata, songFolderPath);
 
             resolve(
               reply.send({
                 success: true,
                 filename: outputFilename,
-                streamUrl: `/api/file/${outputFilename}`,
-                downloadUrl: `/api/download/${outputFilename}`,
+                streamUrl: `/api/file/${folderName}/${outputFilename}`,
+                downloadUrl: `/api/download/${folderName}/${outputFilename}`,
                 canSeparateStems: !!FADR_API_KEY,
                 canGenerateTranscript: !!OPENAI_API_KEY,
                 title: metadata.title,
                 duration: duration,
+                folderName: folderName,
               })
             );
           });
@@ -667,7 +733,10 @@ fastify.post('/api/generate-transcript', async (request, reply) => {
     return reply.code(400).send({ error: 'OpenAI API key not configured' });
   }
 
-  const filePath = path.join(downloadsDir, filename);
+  // Find the file in the organized structure
+  const folderName = createSafeFolderName(filename);
+  const songFolderPath = path.join(downloadsDir, folderName);
+  const filePath = path.join(songFolderPath, filename);
 
   if (!fs.existsSync(filePath)) {
     return reply.code(404).send({ error: 'File not found' });
@@ -723,7 +792,7 @@ fastify.post('/api/generate-transcript', async (request, reply) => {
     }
 
     // Update metadata with transcript
-    const existingMetadata = loadMetadata(filename);
+    const existingMetadata = loadMetadata(filename, songFolderPath);
     if (existingMetadata) {
       existingMetadata.transcript = {
         text: transcription.text,
@@ -732,7 +801,7 @@ fastify.post('/api/generate-transcript', async (request, reply) => {
         segments: transcription.segments || [],
         generatedAt: new Date().toISOString(),
       };
-      saveMetadata(filename, existingMetadata);
+      saveMetadata(filename, existingMetadata, songFolderPath);
     }
 
     return reply.send({
@@ -771,8 +840,12 @@ fastify.post('/api/format-transcript', async (request, reply) => {
   try {
     console.log('🎨 Formatting existing transcript for:', filename);
 
+    // Find the file in the organized structure
+    const folderName = createSafeFolderName(filename);
+    const songFolderPath = path.join(downloadsDir, folderName);
+
     // Load existing metadata
-    const existingMetadata = loadMetadata(filename);
+    const existingMetadata = loadMetadata(filename, songFolderPath);
     if (
       !existingMetadata ||
       !existingMetadata.transcript ||
@@ -809,7 +882,7 @@ fastify.post('/api/format-transcript', async (request, reply) => {
     // Update metadata with formatted text
     existingMetadata.transcript.formattedText = formattedText;
     existingMetadata.transcript.formattedAt = new Date().toISOString();
-    saveMetadata(filename, existingMetadata);
+    saveMetadata(filename, existingMetadata, songFolderPath);
 
     console.log('✅ Transcript formatting completed');
 
@@ -839,7 +912,10 @@ fastify.get('/api/transcript/:filename', async (request, reply) => {
   const filename = request.params.filename;
 
   try {
-    const metadata = loadMetadata(filename);
+    // Find the file in the organized structure
+    const folderName = createSafeFolderName(filename);
+    const songFolderPath = path.join(downloadsDir, folderName);
+    const metadata = loadMetadata(filename, songFolderPath);
 
     if (!metadata || !metadata.transcript) {
       return reply.code(404).send({ error: 'Transcript not found' });
@@ -867,7 +943,10 @@ fastify.post('/api/separate-stems', async (request, reply) => {
     return reply.code(400).send({ error: 'Fadr API key not configured' });
   }
 
-  const filePath = path.join(downloadsDir, filename);
+  // Find the file in the organized structure
+  const folderName = createSafeFolderName(filename);
+  const songFolderPath = path.join(downloadsDir, folderName);
+  const filePath = path.join(songFolderPath, filename);
 
   if (!fs.existsSync(filePath)) {
     return reply.code(404).send({ error: 'File not found' });
@@ -906,29 +985,31 @@ fastify.post('/api/separate-stems', async (request, reply) => {
     console.log('💾 Downloading stems...');
     const stemsInfo = [];
 
+    // Use the already defined songFolderPath
+
     for (const stemAsset of stemAssets) {
       const stemType = stemAsset.metaData.stemType;
       const stemFilename = `${path.parse(filename).name}_${stemType}.mp3`;
-      const stemPath = path.join(downloadsDir, stemFilename);
+      const stemPath = path.join(songFolderPath, stemFilename);
 
       await downloadStem(stemAsset._id, stemPath);
 
       stemsInfo.push({
         type: stemType,
         filename: stemFilename,
-        streamUrl: `/api/file/${stemFilename}`,
-        downloadUrl: `/api/download/${stemFilename}`,
+        streamUrl: `/api/file/${folderName}/${stemFilename}`,
+        downloadUrl: `/api/download/${folderName}/${stemFilename}`,
       });
     }
 
     console.log('✅ Stem separation completed successfully!');
 
     // Update metadata with stems info
-    const existingMetadata = loadMetadata(filename);
+    const existingMetadata = loadMetadata(filename, songFolderPath);
     if (existingMetadata) {
       existingMetadata.stems = stemsInfo;
       existingMetadata.stemsProcessedAt = new Date().toISOString();
-      saveMetadata(filename, existingMetadata);
+      saveMetadata(filename, existingMetadata, songFolderPath);
     }
 
     return reply.send({
@@ -948,125 +1029,204 @@ fastify.post('/api/separate-stems', async (request, reply) => {
 });
 
 // Route to serve downloaded files (for streaming/playing)
-fastify.get('/api/file/:filename', async (request, reply) => {
-  const filename = request.params.filename;
-  const filePath = path.join(downloadsDir, filename);
+fastify.get(
+  '/api/file/:folderOrFilename/:filename?',
+  async (request, reply) => {
+    const { folderOrFilename, filename } = request.params;
 
-  if (fs.existsSync(filePath)) {
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-    const range = request.headers.range;
-
-    const ext = path.extname(filename).toLowerCase();
-    const isVideo = ext === '.mp4' || ext === '.webm' || ext === '.mov';
-    const contentType = isVideo ? 'video/mp4' : 'audio/mpeg';
-
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-      const chunksize = end - start + 1;
-      const file = fs.createReadStream(filePath, { start, end });
-
-      reply.headers({
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': contentType,
-      });
-      reply.code(206);
-      return reply.send(file);
+    let filePath;
+    if (filename) {
+      // New organized structure: /api/file/folder/filename
+      filePath = path.join(downloadsDir, folderOrFilename, filename);
     } else {
+      // Legacy structure: /api/file/filename - check both organized and flat structure
+      const organizedPath = path.join(
+        downloadsDir,
+        createSafeFolderName(folderOrFilename),
+        folderOrFilename
+      );
+      const flatPath = path.join(downloadsDir, folderOrFilename);
+
+      if (fs.existsSync(organizedPath)) {
+        filePath = organizedPath;
+      } else if (fs.existsSync(flatPath)) {
+        filePath = flatPath;
+      } else {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+    }
+
+    if (fs.existsSync(filePath)) {
+      const stat = fs.statSync(filePath);
+      const fileSize = stat.size;
+      const range = request.headers.range;
+
+      const ext = path.extname(filename).toLowerCase();
+      const isVideo = ext === '.mp4' || ext === '.webm' || ext === '.mov';
+      const contentType = isVideo ? 'video/mp4' : 'audio/mpeg';
+
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        const chunksize = end - start + 1;
+        const file = fs.createReadStream(filePath, { start, end });
+
+        reply.headers({
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': contentType,
+        });
+        reply.code(206);
+        return reply.send(file);
+      } else {
+        reply.headers({
+          'Content-Length': fileSize,
+          'Content-Type': contentType,
+        });
+        return reply.send(fs.createReadStream(filePath));
+      }
+    } else {
+      return reply.code(404).send({ error: 'File not found' });
+    }
+  }
+);
+
+// Route to download files (force download)
+fastify.get(
+  '/api/download/:folderOrFilename/:filename?',
+  async (request, reply) => {
+    const { folderOrFilename, filename } = request.params;
+
+    let filePath;
+    let actualFilename;
+
+    if (filename) {
+      // New organized structure: /api/download/folder/filename
+      filePath = path.join(downloadsDir, folderOrFilename, filename);
+      actualFilename = filename;
+    } else {
+      // Legacy structure: /api/download/filename - check both organized and flat structure
+      const organizedPath = path.join(
+        downloadsDir,
+        createSafeFolderName(folderOrFilename),
+        folderOrFilename
+      );
+      const flatPath = path.join(downloadsDir, folderOrFilename);
+
+      if (fs.existsSync(organizedPath)) {
+        filePath = organizedPath;
+      } else if (fs.existsSync(flatPath)) {
+        filePath = flatPath;
+      } else {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+      actualFilename = folderOrFilename;
+    }
+
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(filename).toLowerCase();
+      const isVideo = ext === '.mp4' || ext === '.webm' || ext === '.mov';
+      const contentType = isVideo ? 'video/mp4' : 'audio/mpeg';
+
       reply.headers({
-        'Content-Length': fileSize,
+        'Content-Disposition': `attachment; filename="${actualFilename}"`,
         'Content-Type': contentType,
       });
       return reply.send(fs.createReadStream(filePath));
+    } else {
+      return reply.code(404).send({ error: 'File not found' });
     }
-  } else {
-    return reply.code(404).send({ error: 'File not found' });
   }
-});
-
-// Route to download files (force download)
-fastify.get('/api/download/:filename', async (request, reply) => {
-  const filename = request.params.filename;
-  const filePath = path.join(downloadsDir, filename);
-
-  if (fs.existsSync(filePath)) {
-    const ext = path.extname(filename).toLowerCase();
-    const isVideo = ext === '.mp4' || ext === '.webm' || ext === '.mov';
-    const contentType = isVideo ? 'video/mp4' : 'audio/mpeg';
-
-    reply.headers({
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Type': contentType,
-    });
-    return reply.send(fs.createReadStream(filePath));
-  } else {
-    return reply.code(404).send({ error: 'File not found' });
-  }
-});
+);
 
 // Route to get saved files with metadata
 fastify.get('/api/saved-files', async (request, reply) => {
   try {
-    const files = fs.readdirSync(downloadsDir);
+    const items = fs.readdirSync(downloadsDir);
+    const savedFiles = [];
 
-    // Group files by their base filename (original + stems)
-    const fileGroups = {};
+    for (const item of items) {
+      const itemPath = path.join(downloadsDir, item);
+      const stats = fs.statSync(itemPath);
 
-    files.forEach((file) => {
-      const baseFilename = getBaseFilename(file);
-      if (!fileGroups[baseFilename]) {
-        fileGroups[baseFilename] = {
-          original: null,
-          stems: [],
-          metadata: null,
-        };
+      // Skip non-directories and system files
+      if (!stats.isDirectory() || item.startsWith('.')) {
+        continue;
       }
 
-      if (file === baseFilename) {
-        // This is the original file
-        const filePath = path.join(downloadsDir, file);
-        const stats = fs.statSync(filePath);
-        fileGroups[baseFilename].original = {
-          filename: file,
-          size: stats.size,
-          created: stats.birthtime,
-          streamUrl: `/api/file/${file}`,
-          downloadUrl: `/api/download/${file}`,
-        };
+      // This is a song folder - process its contents
+      const folderContents = fs.readdirSync(itemPath);
+      let originalFile = null;
+      const stems = [];
+      let metadata = null;
+      let videoFile = null;
 
-        // Load metadata for this file
-        fileGroups[baseFilename].metadata = loadMetadata(file);
-      } else {
-        // This is a stem file
-        const filePath = path.join(downloadsDir, file);
-        const stats = fs.statSync(filePath);
-        const stemType = file.match(
-          /_(vocals|drums|bass|instrumental|melodies|other)\.mp3$/
-        )?.[1];
-
-        fileGroups[baseFilename].stems.push({
-          filename: file,
-          type: stemType,
-          size: stats.size,
-          created: stats.birthtime,
-          streamUrl: `/api/file/${file}`,
-          downloadUrl: `/api/download/${file}`,
-        });
+      // Load metadata first
+      const metadataPath = path.join(itemPath, 'metadata.json');
+      if (fs.existsSync(metadataPath)) {
+        try {
+          metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+        } catch (error) {
+          console.error('Error loading metadata for', item, ':', error);
+        }
       }
-    });
 
-    // Convert to array and filter out groups without original files
-    const savedFiles = Object.values(fileGroups)
-      .filter((group) => group.original !== null)
-      .map((group) => ({
-        ...group,
+      // Process files in the folder
+      for (const file of folderContents) {
+        if (file === 'metadata.json') continue;
+
+        const filePath = path.join(itemPath, file);
+        const fileStats = fs.statSync(filePath);
+        const ext = path.extname(file).toLowerCase();
+
+        if (ext === '.mp3') {
+          const baseFilename = getBaseFilename(file);
+
+          if (file === baseFilename) {
+            // This is the original file
+            originalFile = {
+              filename: file,
+              size: fileStats.size,
+              created: fileStats.birthtime,
+              streamUrl: `/api/file/${item}/${file}`,
+              downloadUrl: `/api/download/${item}/${file}`,
+            };
+          } else {
+            // This is a stem file
+            const stemType = file.match(
+              /_(vocals|drums|bass|instrumental|melodies|other)\.mp3$/
+            )?.[1];
+
+            if (stemType) {
+              stems.push({
+                filename: file,
+                type: stemType,
+                size: fileStats.size,
+                created: fileStats.birthtime,
+                streamUrl: `/api/file/${item}/${file}`,
+                downloadUrl: `/api/download/${item}/${file}`,
+              });
+            }
+          }
+        } else if (['.mp4', '.webm', '.mov'].includes(ext)) {
+          // This is a video file
+          videoFile = {
+            filename: file,
+            size: fileStats.size,
+            created: fileStats.birthtime,
+            streamUrl: `/api/file/${item}/${file}`,
+            downloadUrl: `/api/download/${item}/${file}`,
+          };
+        }
+      }
+
+      // Only include folders that have an original audio file
+      if (originalFile) {
         // Sort stems by type for consistent ordering
-        stems: group.stems.sort((a, b) => {
+        stems.sort((a, b) => {
           const order = [
             'vocals',
             'drums',
@@ -1076,11 +1236,22 @@ fastify.get('/api/saved-files', async (request, reply) => {
             'other',
           ];
           return order.indexOf(a.type) - order.indexOf(b.type);
-        }),
-      }))
-      .sort(
-        (a, b) => new Date(b.original.created) - new Date(a.original.created)
-      ); // Sort by newest first
+        });
+
+        savedFiles.push({
+          original: originalFile,
+          stems: stems,
+          metadata: metadata,
+          video: videoFile,
+          folderName: item,
+        });
+      }
+    }
+
+    // Sort by newest first
+    savedFiles.sort(
+      (a, b) => new Date(b.original.created) - new Date(a.original.created)
+    );
 
     return reply.send(savedFiles);
   } catch (err) {
@@ -1117,21 +1288,25 @@ fastify.post('/api/export-video', async (request, reply) => {
   }
 
   try {
-    const metadata = loadMetadata(filename);
+    // Find the file in the organized structure
+    const folderName = createSafeFolderName(filename);
+    const songFolderPath = path.join(downloadsDir, folderName);
+
+    const metadata = loadMetadata(filename, songFolderPath);
     if (!metadata || !metadata.videoFilename) {
       return reply
         .code(400)
         .send({ error: 'No associated video found for this audio file' });
     }
 
-    const videoPath = path.join(downloadsDir, metadata.videoFilename);
-    const audioPath = path.join(downloadsDir, filename);
+    const videoPath = path.join(songFolderPath, metadata.videoFilename);
+    const audioPath = path.join(songFolderPath, filename);
 
     // Determine audio track path based on stem selection
     let chosenAudioPath = audioPath;
     if (stemType && stemType !== 'original') {
       const stemFilename = `${path.parse(filename).name}_${stemType}.mp3`;
-      const stemPath = path.join(downloadsDir, stemFilename);
+      const stemPath = path.join(songFolderPath, stemFilename);
       if (fs.existsSync(stemPath)) {
         chosenAudioPath = stemPath;
       } else {
@@ -1145,7 +1320,7 @@ fastify.post('/api/export-video', async (request, reply) => {
     const outName = `${
       path.parse(metadata.videoFilename).name
     }_${stemType}.mp4`;
-    const outPath = path.join(downloadsDir, outName);
+    const outPath = path.join(songFolderPath, outName);
 
     // ffmpeg to replace audio while keeping video stream, re-encode audio to aac
     await new Promise((resolve, reject) => {
@@ -1188,8 +1363,8 @@ fastify.post('/api/export-video', async (request, reply) => {
     return reply.send({
       success: true,
       filename: path.basename(outPath),
-      streamUrl: `/api/file/${path.basename(outPath)}`,
-      downloadUrl: `/api/download/${path.basename(outPath)}`,
+      streamUrl: `/api/file/${folderName}/${path.basename(outPath)}`,
+      downloadUrl: `/api/download/${folderName}/${path.basename(outPath)}`,
     });
   } catch (e) {
     console.error('export-video error:', e);
