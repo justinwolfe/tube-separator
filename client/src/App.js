@@ -4,7 +4,6 @@ import './App.css';
 import CustomAudioPlayer from './CustomAudioPlayer';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('main');
   const [url, setUrl] = useState('');
   const [videoInfo, setVideoInfo] = useState(null);
   const [downloading, setDownloading] = useState(false);
@@ -19,6 +18,11 @@ function App() {
   const [transcripts, setTranscripts] = useState({});
   const [generatingTranscript, setGeneratingTranscript] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+
+  // Load saved files on app startup
+  React.useEffect(() => {
+    loadSavedFiles();
+  }, []);
 
   const loadSavedFiles = async () => {
     setSavedFilesLoading(true);
@@ -86,17 +90,6 @@ function App() {
     }
   };
 
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
-    if (tab === 'saved') {
-      loadSavedFiles();
-    }
-    // Reset upload mode when switching tabs
-    if (tab !== 'main') {
-      setShowUpload(false);
-    }
-  };
-
   const handleGetInfo = async () => {
     if (!url.trim()) {
       setError('please enter a youtube url');
@@ -110,6 +103,9 @@ function App() {
     try {
       const response = await axios.post('/api/video-info', { url });
       setVideoInfo(response.data);
+
+      // Automatically start processing after getting video info
+      await handleDownload();
     } catch (err) {
       setError(err.response?.data?.error || 'failed to get video info');
     } finally {
@@ -188,6 +184,21 @@ function App() {
           ...prev,
           processingStems: false,
         }));
+      }
+
+      // Automatically generate transcript if available
+      if (downloadData.canGenerateTranscript && downloadData.filename) {
+        try {
+          const transcript = await generateTranscript(downloadData.filename);
+
+          // If transcript was generated and has text, automatically format it
+          if (transcript && transcript.text && !transcript.formattedText) {
+            await formatTranscript(downloadData.filename);
+          }
+        } catch (transcriptErr) {
+          console.error('Transcript generation error:', transcriptErr);
+          // Don't show error for transcript failures as it's not critical
+        }
       }
     } catch (err) {
       setError(err.response?.data?.error || 'download failed');
@@ -284,6 +295,21 @@ function App() {
           processingStems: false,
         }));
       }
+
+      // Automatically generate transcript if available
+      if (uploadData.canGenerateTranscript && uploadData.filename) {
+        try {
+          const transcript = await generateTranscript(uploadData.filename);
+
+          // If transcript was generated and has text, automatically format it
+          if (transcript && transcript.text && !transcript.formattedText) {
+            await formatTranscript(uploadData.filename);
+          }
+        } catch (transcriptErr) {
+          console.error('Transcript generation error:', transcriptErr);
+          // Don't show error for transcript failures as it's not critical
+        }
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'upload failed');
       setUploading(false);
@@ -321,60 +347,48 @@ function App() {
           <h1>tube-splitter</h1>
         </header>
 
-        {/* Tab Navigation */}
-        <div className="tab-navigation">
-          <button
-            className={`tab-button ${activeTab === 'main' ? 'active' : ''}`}
-            onClick={() => handleTabChange('main')}
-          >
-            main
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'saved' ? 'active' : ''}`}
-            onClick={() => handleTabChange('saved')}
-          >
-            saved
-          </button>
-        </div>
+        {/* Main functionality - URL input and upload */}
+        <MainView
+          url={url}
+          setUrl={setUrl}
+          videoInfo={videoInfo}
+          loading={loading}
+          downloading={downloading}
+          separatingStems={separatingStems}
+          error={error}
+          extractionResult={extractionResult}
+          handleGetInfo={handleGetInfo}
+          handleDownload={handleDownload}
+          handleUpload={handleUpload}
+          uploading={uploading}
+          uploadProgress={uploadProgress}
+          showUpload={showUpload}
+          setShowUpload={setShowUpload}
+          formatDuration={formatDuration}
+          getStemDisplayName={getStemDisplayName}
+          transcripts={transcripts}
+          generateTranscript={generateTranscript}
+          loadTranscript={loadTranscript}
+          formatTranscript={formatTranscript}
+          generatingTranscript={generatingTranscript}
+        />
 
-        {/* Tab Content */}
-        {activeTab === 'main' ? (
-          <MainView
-            url={url}
-            setUrl={setUrl}
-            videoInfo={videoInfo}
-            loading={loading}
-            downloading={downloading}
-            separatingStems={separatingStems}
-            error={error}
-            extractionResult={extractionResult}
-            handleGetInfo={handleGetInfo}
-            handleDownload={handleDownload}
-            handleUpload={handleUpload}
-            uploading={uploading}
-            uploadProgress={uploadProgress}
-            showUpload={showUpload}
-            setShowUpload={setShowUpload}
-            formatDuration={formatDuration}
-            getStemDisplayName={getStemDisplayName}
-            transcripts={transcripts}
-            generateTranscript={generateTranscript}
-            loadTranscript={loadTranscript}
-            formatTranscript={formatTranscript}
-            generatingTranscript={generatingTranscript}
-          />
-        ) : (
-          <SavedView
-            savedFiles={savedFiles}
-            loading={savedFilesLoading}
-            formatDuration={formatDuration}
-            getStemDisplayName={getStemDisplayName}
-            transcripts={transcripts}
-            generateTranscript={generateTranscript}
-            loadTranscript={loadTranscript}
-            formatTranscript={formatTranscript}
-            generatingTranscript={generatingTranscript}
-          />
+        {/* Saved files section */}
+        {savedFiles.length > 0 && (
+          <div className="saved-section">
+            <h2 className="saved-section-title">saved files</h2>
+            <SavedView
+              savedFiles={savedFiles}
+              loading={savedFilesLoading}
+              formatDuration={formatDuration}
+              getStemDisplayName={getStemDisplayName}
+              transcripts={transcripts}
+              generateTranscript={generateTranscript}
+              loadTranscript={loadTranscript}
+              formatTranscript={formatTranscript}
+              generatingTranscript={generatingTranscript}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -488,7 +502,7 @@ function MainView({
             disabled={disabled}
             className="action-btn"
           >
-            {loading ? 'finding' : 'find'}
+            {loading ? 'processing...' : 'process video'}
           </button>
           <button
             onClick={() => setShowUpload(!showUpload)}
@@ -615,39 +629,6 @@ function MainView({
                 </div>
               )}
 
-              {/* Transcript Generation */}
-              {extractionResult.canGenerateTranscript &&
-                !transcripts[extractionResult.filename] &&
-                !generatingTranscript && (
-                  <div className="transcript-generation">
-                    <button
-                      onClick={handleGenerateTranscript}
-                      className="transcript-btn"
-                      disabled={generatingTranscript}
-                    >
-                      generate transcript
-                    </button>
-                  </div>
-                )}
-
-              {/* Format existing transcript */}
-              {transcripts[extractionResult.filename] &&
-                transcripts[extractionResult.filename].text &&
-                !transcripts[extractionResult.filename].formattedText &&
-                !generatingTranscript && (
-                  <div className="transcript-generation">
-                    <button
-                      onClick={async () => {
-                        await formatTranscript(extractionResult.filename);
-                      }}
-                      className="transcript-btn"
-                      disabled={generatingTranscript}
-                    >
-                      format transcript into lines
-                    </button>
-                  </div>
-                )}
-
               {generatingTranscript && (
                 <div className="transcript-progress">
                   <div className="progress-bar">
@@ -661,22 +642,11 @@ function MainView({
               )}
             </div>
           ) : (
-            <div className="download-options">
-              <button
-                onClick={() => handleDownload()}
-                disabled={downloading || separatingStems}
-                className="download-btn"
-              >
-                process
-              </button>
-              <button
-                onClick={() => handleDownload(undefined, true)}
-                disabled={downloading || separatingStems}
-                className="download-btn"
-                style={{ marginLeft: 10 }}
-              >
-                process + video (≤720p)
-              </button>
+            <div className="processing-section">
+              <div className="progress-bar">
+                <div className="progress-fill"></div>
+              </div>
+              <p>processing automatically...</p>
             </div>
           )}
         </div>
@@ -830,37 +800,6 @@ function SavedFileItem({
             }
             sourceAudioFilename={original.filename}
           />
-
-          {/* Transcript Generation for saved files */}
-          {!transcripts[original.filename] && !generatingTranscript && (
-            <div className="transcript-generation">
-              <button
-                onClick={handleGenerateTranscript}
-                className="transcript-btn"
-                disabled={generatingTranscript}
-              >
-                generate transcript
-              </button>
-            </div>
-          )}
-
-          {/* Format existing transcript for saved files */}
-          {transcripts[original.filename] &&
-            transcripts[original.filename].text &&
-            !transcripts[original.filename].formattedText &&
-            !generatingTranscript && (
-              <div className="transcript-generation">
-                <button
-                  onClick={async () => {
-                    await formatTranscript(original.filename);
-                  }}
-                  className="transcript-btn"
-                  disabled={generatingTranscript}
-                >
-                  format transcript into lines
-                </button>
-              </div>
-            )}
 
           {generatingTranscript && (
             <div className="transcript-progress">
