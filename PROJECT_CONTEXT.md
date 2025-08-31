@@ -88,6 +88,9 @@ sampler/
 - **Interactive Stem Switching**: Click on any waveform to switch to that stem for playback
 - **Active Stem Highlighting**: Visual styling to indicate which stem is currently playing
 - **Individual Stem Labels**: Clear labels for Original, Vocals, Drums, Bass, Melodies, etc.
+- **Individual Download Buttons**: Each stem and the original track has its own download button with loading states
+- **Video Download Support**: Download original video files when available
+- **HTTPS-Compatible Downloads**: Robust download implementation using fetch + blob for HTTPS compatibility
 - **Playback Controls**: Play/pause, seek forward/backward (5s), volume control
 - **Range Requests**: Supports HTTP range requests for streaming
 - **Touch/Mobile Support**: Responsive touch controls and gestures
@@ -137,9 +140,10 @@ sampler/
 - `GET /api/file/:folderOrFilename/:filename?` - Stream audio or video files (supports range requests; correct MIME)
   - New: `/api/file/folder_name/filename.mp3` (organized structure)
   - Legacy: `/api/file/filename.mp3` (backwards compatible)
-- `GET /api/download/:folderOrFilename/:filename?` - Force download audio or video
+- `GET /api/download/:folderOrFilename/:filename?` - Force download audio or video with CORS headers
   - New: `/api/download/folder_name/filename.mp3` (organized structure)
   - Legacy: `/api/download/filename.mp3` (backwards compatible)
+  - Headers: Content-Disposition attachment, CORS headers for cross-origin downloads
 - `POST /api/export-video` - Export an MP4 by muxing the selected stem audio with the downloaded video
   - Body: `{ filename: string /* base audio filename */ , stemType?: 'original'|'vocals'|'drums'|'bass'|'melodies'|'instrumental'|'other' }`
   - Output: MP4 with video stream copied and audio re-encoded to AAC; length is shortest of A/V
@@ -268,6 +272,31 @@ pnpm run kill-ports        # Kill any conflicting processes
 - Modern browsers required for ES modules and Web Audio API
 - WaveSurfer.js requires browsers with Web Audio support
 - Range request support needed for audio streaming
+
+## 📥 Download Functionality (December 2024)
+
+### Individual File Downloads
+
+- **Stem Downloads**: Each separated stem (vocals, drums, bass, melodies, instrumental) has its own download button
+- **Original Track Download**: Download the original processed audio file
+- **Video Downloads**: Download original video files when available (separate from stem-mixed exports)
+- **HTTPS Compatibility**: Robust download implementation handles mixed content scenarios
+- **Loading States**: Visual feedback during download process with disabled buttons to prevent duplicates
+
+### Download Implementation
+
+- **Primary Method**: Fetch API + Blob URL creation for maximum browser compatibility
+- **Fallback Methods**: Direct anchor download and window.open for edge cases
+- **Error Handling**: Graceful degradation with user-friendly error messages
+- **CORS Headers**: Server includes proper headers for cross-origin downloads
+- **File Naming**: Automatic filename detection from server metadata
+
+### User Interface
+
+- **Waveform Integration**: Download buttons appear next to each stem label in the waveform view
+- **Visual Feedback**: Buttons show loading state (⏳) during downloads and are disabled to prevent duplicates
+- **Hover Effects**: Subtle animations and tooltips for better user experience
+- **Responsive Design**: Download buttons work consistently across desktop and mobile devices
 
 ## 🛠️ Recent Changes (Migration)
 

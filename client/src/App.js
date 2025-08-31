@@ -619,6 +619,8 @@ function MainView({
                 transcript={transcripts[extractionResult.filename]}
                 videoUrl={extractionResult.videoStreamUrl || null}
                 sourceAudioFilename={extractionResult.filename}
+                originalDownloadUrl={extractionResult.downloadUrl}
+                videoDownloadUrl={extractionResult.videoDownloadUrl || null}
               />
               {extractionResult.processingStems && (
                 <div className="stem-progress">
@@ -716,7 +718,7 @@ function SavedFileItem({
   formatTranscript,
   generatingTranscript,
 }) {
-  const { original, stems, metadata } = fileGroup;
+  const { original, stems, metadata, video } = fileGroup;
   const [expanded, setExpanded] = useState(false);
 
   // Load transcript when component becomes expanded
@@ -799,6 +801,8 @@ function SavedFileItem({
                 : null
             }
             sourceAudioFilename={original.filename}
+            originalDownloadUrl={original.downloadUrl}
+            videoDownloadUrl={video?.downloadUrl || null}
           />
 
           {generatingTranscript && (

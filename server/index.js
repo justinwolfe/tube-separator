@@ -1134,6 +1134,10 @@ fastify.get(
       reply.headers({
         'Content-Disposition': `attachment; filename="${actualFilename}"`,
         'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Cache-Control': 'no-cache',
       });
       return reply.send(fs.createReadStream(filePath));
     } else {

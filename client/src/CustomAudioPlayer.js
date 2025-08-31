@@ -18,6 +18,9 @@ const CustomAudioPlayer = ({
   onSeekToTime,
   videoUrl = null,
   sourceAudioFilename = null,
+  // Add download URL props
+  originalDownloadUrl = null,
+  videoDownloadUrl = null,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -29,6 +32,7 @@ const CustomAudioPlayer = ({
   const [dragTime, setDragTime] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
   const [startPoint, setStartPoint] = useState(null);
+  const [downloadingFiles, setDownloadingFiles] = useState(new Set());
   const startPointRef = useRef(startPoint);
   useEffect(() => {
     startPointRef.current = startPoint;
@@ -303,11 +307,19 @@ const CustomAudioPlayer = ({
 
     // Get all tracks (original + stems)
     const tracks = [
-      { type: 'original', url: originalTrack, label: 'ORIGINAL' },
+      {
+        type: 'original',
+        url: originalTrack,
+        label: 'ORIGINAL',
+        downloadUrl: originalDownloadUrl,
+        filename: sourceAudioFilename,
+      },
       ...stems.map((stem) => ({
         type: stem.type,
         url: stem.streamUrl,
         label: stem.type.toUpperCase(),
+        downloadUrl: stem.downloadUrl,
+        filename: stem.filename,
       })),
     ];
 
@@ -320,11 +332,35 @@ const CustomAudioPlayer = ({
       }`;
       container.dataset.stemType = track.type;
 
-      // Create label
+      // Create label container with download button
+      const labelContainer = document.createElement('div');
+      labelContainer.className = 'waveform-label-container';
+
       const label = document.createElement('div');
       label.className = 'waveform-label';
       label.textContent = track.label;
-      container.appendChild(label);
+      labelContainer.appendChild(label);
+
+      // Add download button if downloadUrl is available
+      if (track.downloadUrl) {
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'waveform-download-btn';
+        const filename = track.filename || `${track.label}.mp3`;
+        const downloadKey = `${track.downloadUrl}-${filename}`;
+        const isDownloading = downloadingFiles.has(downloadKey);
+        downloadBtn.innerHTML = isDownloading ? '⏳' : '⬇';
+        downloadBtn.title = `Download ${track.label}`;
+        downloadBtn.disabled = isDownloading;
+        downloadBtn.dataset.downloadUrl = track.downloadUrl;
+        downloadBtn.dataset.filename = filename;
+        downloadBtn.onclick = (e) => {
+          e.stopPropagation();
+          handleDownload(track.downloadUrl, filename);
+        };
+        labelContainer.appendChild(downloadBtn);
+      }
+
+      container.appendChild(labelContainer);
 
       // Create waveform div
       const waveformDiv = document.createElement('div');
@@ -471,6 +507,25 @@ const CustomAudioPlayer = ({
     });
     createOrUpdateStartMarker();
   }, [activeStem, createOrUpdateStartMarker]);
+
+  // Update download button states when downloadingFiles changes
+  useEffect(() => {
+    Object.entries(waveformRefs.current).forEach(([stemType, container]) => {
+      if (container) {
+        const downloadBtn = container.querySelector('.waveform-download-btn');
+        if (downloadBtn) {
+          const downloadUrl = downloadBtn.dataset.downloadUrl;
+          const filename = downloadBtn.dataset.filename;
+          if (downloadUrl && filename) {
+            const downloadKey = `${downloadUrl}-${filename}`;
+            const isDownloading = downloadingFiles.has(downloadKey);
+            downloadBtn.innerHTML = isDownloading ? '⏳' : '⬇';
+            downloadBtn.disabled = isDownloading;
+          }
+        }
+      }
+    });
+  }, [downloadingFiles]);
 
   // Sync all audio elements
   const syncAudioElements = useCallback(
@@ -1086,6 +1141,79 @@ const CustomAudioPlayer = ({
     }
   };
 
+  // Handle file downloads with HTTPS/CORS support
+  const handleDownload = async (downloadUrl, filename) => {
+    if (!downloadUrl) {
+      console.warn('No download URL provided for', filename);
+      return;
+    }
+
+    const downloadKey = `${downloadUrl}-${filename}`;
+
+    // Prevent multiple simultaneous downloads of the same file
+    if (downloadingFiles.has(downloadKey)) {
+      return;
+    }
+
+    setDownloadingFiles((prev) => new Set([...prev, downloadKey]));
+
+    try {
+      // Method 1: Try fetch + blob approach for better HTTPS compatibility
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || 'download';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Clean up the blob URL
+      setTimeout(() => window.URL.revokeObjectURL(url), 100);
+    } catch (error) {
+      console.error('Fetch download failed:', error);
+
+      try {
+        // Method 2: Fallback to simple anchor approach
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename || '';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (anchorError) {
+        console.error('Anchor download failed:', anchorError);
+
+        // Method 3: Last resort - open in new tab
+        try {
+          window.open(downloadUrl, '_blank');
+        } catch (windowError) {
+          console.error('All download methods failed:', windowError);
+          alert(
+            'Download failed. Please try right-clicking the download button and selecting "Save link as..."'
+          );
+        }
+      }
+    } finally {
+      // Remove from downloading set after a short delay
+      setTimeout(() => {
+        setDownloadingFiles((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(downloadKey);
+          return newSet;
+        });
+      }, 1000);
+    }
+  };
+
   return (
     <div className={`custom-audio-player ${className}`}>
       {/* Optional Video Display */}
@@ -1173,6 +1301,16 @@ const CustomAudioPlayer = ({
             title="export video with current stem audio"
           >
             ⬇︎
+          </button>
+        )}
+
+        {videoDownloadUrl && (
+          <button
+            className="seek-btn"
+            onClick={() => handleDownload(videoDownloadUrl, 'video.mp4')}
+            title="download original video"
+          >
+            📹
           </button>
         )}
       </div>
