@@ -111,7 +111,7 @@
   cursor: pointer;
   transition: all 0.3s ease;
   text-transform: uppercase;
-  min-width: 140px;
+  min-width: 120px;
   border-left: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -122,6 +122,11 @@
 .action-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.action-btn.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
 }
 
 .error-message {
@@ -476,6 +481,7 @@
   .action-btn {
     border-left: none;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+    min-width: 120px;
   }
 
   .stems-grid {

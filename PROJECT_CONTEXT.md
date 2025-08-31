@@ -12,7 +12,7 @@
 sampler/
 ├── client/                 # React frontend (Vite + React 18)
 │   ├── src/
-│   │   ├── App.js         # Main application with 3 tabs (Download/Upload/Saved)
+│   │   ├── App.js         # Main application with 2 tabs (Main/Saved) - unified download/upload
 │   │   ├── App.css        # Modern dark theme with gradient effects
 │   │   ├── CustomAudioPlayer.js  # Advanced audio player with WaveSurfer.js
 │   │   ├── CustomAudioPlayer.css
@@ -140,23 +140,20 @@ sampler/
 - **Layout**: Centered 800px max-width with responsive design
 - **Interactions**: Smooth transitions and hover effects throughout
 
-### Three-Tab Interface
+### Two-Tab Interface
 
-1. **Download Tab**: YouTube URL input and processing
-2. **Upload Tab**: File upload with drag-and-drop
-3. **Saved Tab**: Library of all processed files with playback
+1. **Main Tab**: Unified YouTube URL input and file upload with conditional drag-and-drop area
+2. **Saved Tab**: Library of all processed files with playback
 
 ### Component Hierarchy
 
 ```
 App
-├── TabNavigation
-├── MainView (Download)
+├── TabNavigation (Main/Saved)
+├── MainView (Unified Download/Upload)
+│   ├── URLInput + UploadButton
+│   ├── ConditionalDragDropZone
 │   ├── VideoInfo Display
-│   ├── CustomAudioPlayer
-│   └── TranscriptGeneration
-├── UploadView
-│   ├── DragDropZone
 │   ├── CustomAudioPlayer
 │   └── TranscriptGeneration
 └── SavedView
@@ -301,6 +298,14 @@ pnpm run kill-ports        # Kill any conflicting processes
 - T: Cycle through available stems (Original → next stem ...)
 - Arrow Left/Right: Seek backward/forward 0.5s
 - F: Set start point and display a synchronized marker across all waveforms
+
+### UI Consolidation (December 2024)
+
+- **Unified Interface**: Merged download and upload functionality into a single main tab for improved user experience
+- **Conditional Upload Area**: Upload button beside the URL input toggles a drag-and-drop area when clicked
+- **Streamlined Navigation**: Reduced from 3 tabs (Download/Upload/Saved) to 2 tabs (Main/Saved)
+- **Preserved Functionality**: All existing download and upload features maintained with identical behavior
+- **Cleaner Layout**: Eliminated tab switching between download and upload workflows
 
 ## 📝 Usage Workflow
 

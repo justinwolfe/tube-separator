@@ -18,6 +18,7 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [transcripts, setTranscripts] = useState({});
   const [generatingTranscript, setGeneratingTranscript] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
 
   const loadSavedFiles = async () => {
     setSavedFilesLoading(true);
@@ -89,6 +90,10 @@ function App() {
     setActiveTab(tab);
     if (tab === 'saved') {
       loadSavedFiles();
+    }
+    // Reset upload mode when switching tabs
+    if (tab !== 'main') {
+      setShowUpload(false);
     }
   };
 
@@ -322,13 +327,7 @@ function App() {
             className={`tab-button ${activeTab === 'main' ? 'active' : ''}`}
             onClick={() => handleTabChange('main')}
           >
-            download
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'upload' ? 'active' : ''}`}
-            onClick={() => handleTabChange('upload')}
-          >
-            upload
+            main
           </button>
           <button
             className={`tab-button ${activeTab === 'saved' ? 'active' : ''}`}
@@ -351,23 +350,11 @@ function App() {
             extractionResult={extractionResult}
             handleGetInfo={handleGetInfo}
             handleDownload={handleDownload}
-            formatDuration={formatDuration}
-            getStemDisplayName={getStemDisplayName}
-            transcripts={transcripts}
-            generateTranscript={generateTranscript}
-            loadTranscript={loadTranscript}
-            formatTranscript={formatTranscript}
-            generatingTranscript={generatingTranscript}
-          />
-        ) : activeTab === 'upload' ? (
-          <UploadView
-            videoInfo={videoInfo}
+            handleUpload={handleUpload}
             uploading={uploading}
             uploadProgress={uploadProgress}
-            separatingStems={separatingStems}
-            error={error}
-            extractionResult={extractionResult}
-            handleUpload={handleUpload}
+            showUpload={showUpload}
+            setShowUpload={setShowUpload}
             formatDuration={formatDuration}
             getStemDisplayName={getStemDisplayName}
             transcripts={transcripts}
@@ -406,6 +393,11 @@ function MainView({
   extractionResult,
   handleGetInfo,
   handleDownload,
+  handleUpload,
+  uploading,
+  uploadProgress,
+  showUpload,
+  setShowUpload,
   formatDuration,
   getStemDisplayName,
   transcripts,
@@ -414,6 +406,7 @@ function MainView({
   formatTranscript,
   generatingTranscript,
 }) {
+  const [dragActive, setDragActive] = useState(false);
   // Load transcript when extraction result becomes available
   React.useEffect(() => {
     if (extractionResult?.filename && !transcripts[extractionResult.filename]) {
@@ -427,6 +420,57 @@ function MainView({
     }
   };
 
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileSelect = (file) => {
+    // Check file type
+    const allowedTypes = [
+      'video/mp4',
+      'video/avi',
+      'video/mov',
+      'video/mkv',
+      'video/webm',
+      'audio/mp3',
+      'audio/wav',
+      'audio/m4a',
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert(
+        'Please select a video or audio file (MP4, AVI, MOV, MKV, WebM, MP3, WAV, M4A)'
+      );
+      return;
+    }
+
+    // Check file size (limit to 100MB)
+    if (file.size > 100 * 1024 * 1024) {
+      alert('File size must be less than 100MB');
+      return;
+    }
+
+    handleUpload(file);
+  };
+
+  const disabled = loading || downloading || separatingStems || uploading;
+
   return (
     <>
       <div className="input-section">
@@ -437,19 +481,91 @@ function MainView({
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             className="url-input"
-            disabled={loading || downloading || separatingStems}
+            disabled={disabled}
           />
           <button
             onClick={handleGetInfo}
-            disabled={loading || downloading || separatingStems}
+            disabled={disabled}
             className="action-btn"
           >
             {loading ? 'finding' : 'find'}
+          </button>
+          <button
+            onClick={() => setShowUpload(!showUpload)}
+            disabled={disabled}
+            className={`action-btn ${showUpload ? 'active' : ''}`}
+          >
+            {showUpload ? 'hide upload' : 'upload'}
           </button>
         </div>
       </div>
 
       {error && <div className="error-message">{error}</div>}
+
+      {/* Upload Area */}
+      {showUpload && !extractionResult && (
+        <div className="upload-section">
+          <div
+            className={`upload-zone ${dragActive ? 'drag-active' : ''} ${
+              disabled ? 'disabled' : ''
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <div className="upload-content">
+              <div className="upload-icon">📁</div>
+              <h3>upload video or audio file</h3>
+              <p>drag and drop a file here, or click to browse</p>
+              <p className="upload-formats">
+                supported: MP4, AVI, MOV, MKV, WebM, MP3, WAV, M4A
+              </p>
+              <p className="upload-limit">max file size: 100MB</p>
+
+              <input
+                type="file"
+                id="file-upload"
+                className="file-input"
+                accept="video/*,audio/*"
+                onChange={(e) => {
+                  if (e.target.files[0]) {
+                    handleFileSelect(e.target.files[0]);
+                  }
+                }}
+                disabled={disabled}
+              />
+              <label htmlFor="file-upload" className="upload-btn">
+                {uploading ? 'uploading...' : 'choose file'}
+              </label>
+            </div>
+          </div>
+
+          {uploading && (
+            <div className="upload-progress">
+              <div className="progress-bar">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+              <p>uploading file... {uploadProgress}%</p>
+            </div>
+          )}
+
+          {separatingStems && !uploading && (
+            <div className="processing-section">
+              <div className="progress-bar">
+                <div className="progress-fill"></div>
+              </div>
+              <p>
+                extracting audio and separating stems...this may take 30-60
+                seconds
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {videoInfo && (
         <div className="video-info">
@@ -616,240 +732,6 @@ function SavedView({
         />
       ))}
     </div>
-  );
-}
-
-// Upload tab component
-function UploadView({
-  videoInfo,
-  uploading,
-  uploadProgress,
-  separatingStems,
-  error,
-  extractionResult,
-  handleUpload,
-  formatDuration,
-  getStemDisplayName,
-  transcripts,
-  generateTranscript,
-  loadTranscript,
-  formatTranscript,
-  generatingTranscript,
-}) {
-  const [dragActive, setDragActive] = useState(false);
-
-  // Load transcript when extraction result becomes available
-  React.useEffect(() => {
-    if (extractionResult?.filename && !transcripts[extractionResult.filename]) {
-      loadTranscript(extractionResult.filename);
-    }
-  }, [extractionResult?.filename, transcripts, loadTranscript]);
-
-  const handleGenerateTranscript = async () => {
-    if (extractionResult?.filename) {
-      await generateTranscript(extractionResult.filename);
-    }
-  };
-
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileSelect = (file) => {
-    // Check file type
-    const allowedTypes = [
-      'video/mp4',
-      'video/avi',
-      'video/mov',
-      'video/mkv',
-      'video/webm',
-      'audio/mp3',
-      'audio/wav',
-      'audio/m4a',
-    ];
-
-    if (!allowedTypes.includes(file.type)) {
-      alert(
-        'Please select a video or audio file (MP4, AVI, MOV, MKV, WebM, MP3, WAV, M4A)'
-      );
-      return;
-    }
-
-    // Check file size (limit to 100MB)
-    if (file.size > 100 * 1024 * 1024) {
-      alert('File size must be less than 100MB');
-      return;
-    }
-
-    handleUpload(file);
-  };
-
-  const disabled = uploading || separatingStems;
-
-  return (
-    <>
-      {!extractionResult ? (
-        <div className="upload-section">
-          <div
-            className={`upload-zone ${dragActive ? 'drag-active' : ''} ${
-              disabled ? 'disabled' : ''
-            }`}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-          >
-            <div className="upload-content">
-              <div className="upload-icon">📁</div>
-              <h3>upload video or audio file</h3>
-              <p>drag and drop a file here, or click to browse</p>
-              <p className="upload-formats">
-                supported: MP4, AVI, MOV, MKV, WebM, MP3, WAV, M4A
-              </p>
-              <p className="upload-limit">max file size: 100MB</p>
-
-              <input
-                type="file"
-                id="file-upload"
-                className="file-input"
-                accept="video/*,audio/*"
-                onChange={(e) => {
-                  if (e.target.files[0]) {
-                    handleFileSelect(e.target.files[0]);
-                  }
-                }}
-                disabled={disabled}
-              />
-              <label htmlFor="file-upload" className="upload-btn">
-                {uploading ? 'uploading...' : 'choose file'}
-              </label>
-            </div>
-          </div>
-
-          {uploading && (
-            <div className="upload-progress">
-              <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${uploadProgress}%` }}
-                ></div>
-              </div>
-              <p>uploading file... {uploadProgress}%</p>
-            </div>
-          )}
-
-          {separatingStems && !uploading && (
-            <div className="processing-section">
-              <div className="progress-bar">
-                <div className="progress-fill"></div>
-              </div>
-              <p>
-                extracting audio and separating stems...this may take 30-60
-                seconds
-              </p>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="upload-result">
-          {videoInfo && (
-            <div className="video-info">
-              <div className="video-details">
-                <div className="details">
-                  <h3>{videoInfo.title}</h3>
-                  <p className="uploader">{videoInfo.uploader}</p>
-                  <p className="duration">
-                    {formatDuration(videoInfo.duration)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="player-section">
-            <CustomAudioPlayer
-              originalTrack={extractionResult.streamUrl}
-              stems={extractionResult.stems || []}
-              className="main-player"
-              transcript={transcripts[extractionResult.filename]}
-              videoUrl={extractionResult.videoStreamUrl || null}
-              sourceAudioFilename={extractionResult.filename}
-            />
-            {extractionResult.processingStems && (
-              <div className="stem-progress">
-                <div className="progress-bar">
-                  <div className="progress-fill"></div>
-                </div>
-                <p>separating stems via fadr...this may take 30-60 seconds</p>
-              </div>
-            )}
-
-            {/* Transcript Generation */}
-            {extractionResult.canGenerateTranscript &&
-              !transcripts[extractionResult.filename] &&
-              !generatingTranscript && (
-                <div className="transcript-generation">
-                  <button
-                    onClick={handleGenerateTranscript}
-                    className="transcript-btn"
-                    disabled={generatingTranscript}
-                  >
-                    generate transcript
-                  </button>
-                </div>
-              )}
-
-            {/* Format existing transcript */}
-            {transcripts[extractionResult.filename] &&
-              transcripts[extractionResult.filename].text &&
-              !transcripts[extractionResult.filename].formattedText &&
-              !generatingTranscript && (
-                <div className="transcript-generation">
-                  <button
-                    onClick={async () => {
-                      await formatTranscript(extractionResult.filename);
-                    }}
-                    className="transcript-btn"
-                    disabled={generatingTranscript}
-                  >
-                    format transcript into lines
-                  </button>
-                </div>
-              )}
-
-            {generatingTranscript && (
-              <div className="transcript-progress">
-                <div className="progress-bar">
-                  <div className="progress-fill"></div>
-                </div>
-                <p>
-                  generating/formatting transcript with openai...this may take
-                  30-60 seconds
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {error && <div className="error-message">{error}</div>}
-    </>
   );
 }
 
