@@ -293,6 +293,15 @@
 
   .player-controls {
     gap: 15px;
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    background: rgba(10, 10, 10, 0.98);
+    padding: 12px 0 max(12px, env(safe-area-inset-bottom, 0));
+    margin-bottom: 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
   }
 
   .seek-btn {
