@@ -21,6 +21,7 @@ A modern web application that downloads MP3 audio from YouTube videos and separa
 - pnpm (v8 or higher) - `npm install -g pnpm`
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed on your system
 - Fadr API key (for stem separation feature)
+- Python 3.9+ (for beat/slice analysis)
 
 ### Installation
 
@@ -35,6 +36,12 @@ A modern web application that downloads MP3 audio from YouTube videos and separa
 
    ```bash
    pnpm install
+   ```
+
+   Install Python beat-analysis dependencies:
+
+   ```bash
+   pip3 install -r server/requirements-beat-analysis.txt
    ```
 
 3. **Set up environment variables**
@@ -105,6 +112,15 @@ The application will be available at `http://localhost:7329`
 2. Click "Separate into Stems" to start the AI processing
 3. Wait 30-60 seconds for the separation to complete
 4. Preview and download individual stems (vocals, drums, bass, etc.)
+
+### Beat Analysis + Slicing
+
+1. Open any processed track in the player
+2. In **Slice Lab**, choose an analysis source stem (drums is usually best)
+3. Click **Analyze beats**
+4. Pick a slice length (1/2/4/8 beats)
+5. Tap slice pads to jump around and use **Play slice** to audition
+6. Switch playback stems while keeping the same slice timing grid
 
 ## API Endpoints
 

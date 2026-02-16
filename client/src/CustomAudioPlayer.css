@@ -53,12 +53,35 @@
 
 .waveform-label-container {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
 }
 
+.waveform-stem-toggle {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.waveform-stem-toggle.active {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
 .waveform-download-btn {
+  margin-left: auto;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 3px;
@@ -215,6 +238,150 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+.slice-lab {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 18px;
+  padding-top: 20px;
+  margin-bottom: 24px;
+}
+
+.slice-lab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.slice-lab-header h5 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.slice-meta {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.slice-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.slice-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slice-control span {
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.slice-control select {
+  min-height: 38px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 8px;
+  font-size: 14px;
+}
+
+.slice-action-btn {
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  padding: 9px 12px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.slice-action-btn.subtle {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.slice-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slice-error {
+  color: #ff8a8a;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.slice-stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.slice-loop-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.slice-pad {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #fff;
+  min-height: 58px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.slice-pad.active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.slice-pad-index {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.slice-pad-time {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.slice-selected-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
 /* Stem Controls */
 .stem-controls {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
@@ -308,6 +475,14 @@
     width: 40px;
     height: 40px;
     font-size: 16px;
+  }
+
+  .slice-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .slice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .stem-toggles {

@@ -19,6 +19,7 @@ if (typeof globalThis.File === 'undefined') {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const projectRoot = path.join(__dirname, '..');
 
 // Load .env from project root (parent directory)
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -73,6 +74,10 @@ if (!fs.existsSync(metadataDir)) {
   fs.mkdirSync(metadataDir, { recursive: true });
 }
 
+const scriptsDir = path.join(__dirname, 'scripts');
+const beatAnalysisScriptPath = path.join(scriptsDir, 'beat_analysis.py');
+const venvPythonPath = path.join(projectRoot, '.venv', 'bin', 'python3');
+
 // Helper function to save metadata
 function saveMetadata(filename, data, folderPath = null) {
   try {
@@ -126,6 +131,60 @@ function createSafeFolderName(filename) {
   // Remove the .mp3 extension and create a safe folder name
   const baseName = path.parse(filename).name;
   return baseName.replace(/[^a-zA-Z0-9\s-_]/g, '_').substring(0, 100);
+}
+
+function resolveAudioPathForStem(songFolderPath, filename, stemType = 'original') {
+  if (!stemType || stemType === 'original') {
+    return path.join(songFolderPath, filename);
+  }
+
+  const stemFilename = `${path.parse(filename).name}_${stemType}.mp3`;
+  return path.join(songFolderPath, stemFilename);
+}
+
+async function runBeatAnalysis(audioPath) {
+  if (!fs.existsSync(beatAnalysisScriptPath)) {
+    throw new Error('Beat analysis script not found');
+  }
+
+  return new Promise((resolve, reject) => {
+    const pythonCmd = fs.existsSync(venvPythonPath) ? venvPythonPath : 'python3';
+    const py = spawn(pythonCmd, [beatAnalysisScriptPath, '--input', audioPath], {
+      cwd: __dirname,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    py.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    py.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    py.on('close', (code) => {
+      if (code !== 0) {
+        const detail = stderr || stdout || `python exited with code ${code}`;
+        return reject(new Error(detail.trim()));
+      }
+
+      try {
+        const parsed = JSON.parse(stdout);
+        resolve(parsed);
+      } catch (error) {
+        reject(
+          new Error(
+            `Beat analysis returned invalid JSON: ${error.message}\n${stdout.slice(
+              0,
+              500
+            )}`
+          )
+        );
+      }
+    });
+  });
 }
 
 // Helper function to normalize YouTube URLs (including mobile URLs)
@@ -297,6 +356,424 @@ async function downloadStem(assetId, outputPath) {
     );
     throw error;
   }
+}
+
+async function separateStemsForFile(filename, songFolderPath) {
+  if (!FADR_API_KEY) {
+    throw new Error('Fadr API key not configured');
+  }
+
+  const filePath = path.join(songFolderPath, filename);
+  if (!fs.existsSync(filePath)) {
+    throw new Error('File not found');
+  }
+
+  const folderName = path.basename(songFolderPath);
+
+  console.log('🎵 Starting stem separation for:', filename);
+  console.log('📤 Uploading to Fadr...');
+  const asset = await uploadToFadr(filePath, filename);
+  console.log('✅ Upload completed, asset ID:', asset._id);
+
+  console.log('⚙️  Creating stem task...');
+  const task = await createStemTask(asset._id);
+  console.log('✅ Stem task created, task ID:', task._id);
+
+  console.log('⏳ Waiting for stem separation to complete...');
+  const completedTask = await pollTaskStatus(task._id);
+  console.log('✅ Stem separation completed');
+
+  console.log('📥 Getting stem information...');
+  const stemIds = completedTask.asset.stems;
+  const stemResponses = await Promise.all(
+    stemIds.map((id) =>
+      axios.get(`${FADR_API_URL}/assets/${id}`, { headers: fadrApiHeaders })
+    )
+  );
+
+  const stemAssets = stemResponses.map((response) => response.data.asset);
+  const stemsInfo = [];
+
+  console.log('💾 Downloading stems...');
+  for (const stemAsset of stemAssets) {
+    const stemType = stemAsset.metaData.stemType;
+    const stemFilename = `${path.parse(filename).name}_${stemType}.mp3`;
+    const stemPath = path.join(songFolderPath, stemFilename);
+
+    await downloadStem(stemAsset._id, stemPath);
+
+    stemsInfo.push({
+      type: stemType,
+      filename: stemFilename,
+      streamUrl: `/api/file/${folderName}/${stemFilename}`,
+      downloadUrl: `/api/download/${folderName}/${stemFilename}`,
+    });
+  }
+
+  const existingMetadata = loadMetadata(filename, songFolderPath);
+  if (existingMetadata) {
+    existingMetadata.stems = stemsInfo;
+    existingMetadata.stemsProcessedAt = new Date().toISOString();
+    saveMetadata(filename, existingMetadata, songFolderPath);
+  }
+
+  console.log('✅ Stem separation completed successfully!');
+  return stemsInfo;
+}
+
+async function generateTranscriptForFile(filename, songFolderPath) {
+  if (!openai) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  const filePath = path.join(songFolderPath, filename);
+  if (!fs.existsSync(filePath)) {
+    throw new Error('File not found');
+  }
+
+  console.log('🎙️  Starting transcript generation for:', filename);
+  const audioStream = fs.createReadStream(filePath);
+
+  const transcription = await openai.audio.transcriptions.create({
+    file: audioStream,
+    model: 'whisper-1',
+    response_format: 'verbose_json',
+    timestamp_granularities: ['word'],
+  });
+
+  let formattedText = transcription.text;
+  try {
+    const formattingResponse = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a transcript formatter. Break the given text into natural, readable lines with proper line breaks. Add line breaks at natural pauses, sentence boundaries, and logical breaks. Do not change the actual words, only add line breaks for readability. Return only the formatted text, no explanations.',
+        },
+        {
+          role: 'user',
+          content: transcription.text,
+        },
+      ],
+      max_tokens: 4000,
+      temperature: 0,
+    });
+
+    if (formattingResponse.choices[0]?.message?.content) {
+      formattedText = formattingResponse.choices[0].message.content.trim();
+    }
+  } catch (formattingError) {
+    console.warn(
+      '⚠️ Transcript formatting failed, using original text:',
+      formattingError.message
+    );
+  }
+
+  const transcriptPayload = {
+    text: transcription.text,
+    formattedText,
+    words: transcription.words || [],
+    segments: transcription.segments || [],
+    generatedAt: new Date().toISOString(),
+  };
+
+  const existingMetadata = loadMetadata(filename, songFolderPath);
+  if (existingMetadata) {
+    existingMetadata.transcript = transcriptPayload;
+    saveMetadata(filename, existingMetadata, songFolderPath);
+  }
+
+  console.log('✅ Transcript generation completed');
+  return transcriptPayload;
+}
+
+async function analyzeAndStoreStem(filename, songFolderPath, stemType) {
+  const audioPath = resolveAudioPathForStem(songFolderPath, filename, stemType);
+  if (!fs.existsSync(audioPath)) {
+    throw new Error(`Audio for stem "${stemType}" was not found`);
+  }
+
+  const analysis = await runBeatAnalysis(audioPath);
+  const storedAnalysis = {
+    ...analysis,
+    stemType,
+    sourceFilename: path.basename(audioPath),
+    analyzedAt: new Date().toISOString(),
+  };
+
+  const metadata = loadMetadata(filename, songFolderPath);
+  if (metadata) {
+    metadata.beatAnalysis = {
+      ...(metadata.beatAnalysis || {}),
+      [stemType]: storedAnalysis,
+    };
+    saveMetadata(filename, metadata, songFolderPath);
+  }
+
+  return storedAnalysis;
+}
+
+function runSingleFlight(lockMap, key, fn) {
+  if (lockMap.has(key)) {
+    return lockMap.get(key);
+  }
+
+  const job = Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      lockMap.delete(key);
+    });
+
+  lockMap.set(key, job);
+  return job;
+}
+
+const stemProcessingLocks = new Map();
+const transcriptProcessingLocks = new Map();
+const analysisProcessingLocks = new Map();
+const backgroundPipelineLocks = new Map();
+
+function setBackgroundPipelineStatus(
+  filename,
+  songFolderPath,
+  state,
+  step = null,
+  stepData = {}
+) {
+  const metadata = loadMetadata(filename, songFolderPath);
+  if (!metadata) return;
+
+  const existing = metadata.backgroundPipeline || {};
+  const steps = existing.steps || {};
+  if (step) {
+    steps[step] = {
+      ...(steps[step] || {}),
+      ...stepData,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  metadata.backgroundPipeline = {
+    ...existing,
+    state,
+    steps,
+    lastUpdatedAt: new Date().toISOString(),
+  };
+  if (!existing.startedAt) {
+    metadata.backgroundPipeline.startedAt = new Date().toISOString();
+  }
+  if (state === 'completed' || state === 'completed_with_errors') {
+    metadata.backgroundPipeline.finishedAt = new Date().toISOString();
+  }
+  saveMetadata(filename, metadata, songFolderPath);
+}
+
+function triggerBackgroundPipeline(filename, songFolderPath) {
+  const key = `${songFolderPath}:${filename}`;
+  if (backgroundPipelineLocks.has(key)) {
+    return backgroundPipelineLocks.get(key);
+  }
+
+  const job = (async () => {
+    const errors = [];
+    setBackgroundPipelineStatus(filename, songFolderPath, 'running');
+
+    const metadataAtStart = loadMetadata(filename, songFolderPath) || {};
+
+    if (FADR_API_KEY && (!metadataAtStart.stems || metadataAtStart.stems.length === 0)) {
+      try {
+        setBackgroundPipelineStatus(filename, songFolderPath, 'running', 'stems', {
+          status: 'running',
+        });
+        await runSingleFlight(
+          stemProcessingLocks,
+          `${songFolderPath}:${filename}`,
+          () => separateStemsForFile(filename, songFolderPath)
+        );
+        setBackgroundPipelineStatus(filename, songFolderPath, 'running', 'stems', {
+          status: 'completed',
+        });
+      } catch (error) {
+        errors.push(`stems: ${error.message}`);
+        setBackgroundPipelineStatus(filename, songFolderPath, 'running', 'stems', {
+          status: 'failed',
+          error: error.message,
+        });
+      }
+    } else {
+      setBackgroundPipelineStatus(filename, songFolderPath, 'running', 'stems', {
+        status: FADR_API_KEY ? 'skipped_already_done' : 'skipped_not_configured',
+      });
+    }
+
+    const metadataAfterStems = loadMetadata(filename, songFolderPath) || {};
+    if (openai && !metadataAfterStems.transcript?.text) {
+      try {
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'transcript',
+          {
+            status: 'running',
+          }
+        );
+        await runSingleFlight(
+          transcriptProcessingLocks,
+          `${songFolderPath}:${filename}`,
+          () => generateTranscriptForFile(filename, songFolderPath)
+        );
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'transcript',
+          {
+            status: 'completed',
+          }
+        );
+      } catch (error) {
+        errors.push(`transcript: ${error.message}`);
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'transcript',
+          {
+            status: 'failed',
+            error: error.message,
+          }
+        );
+      }
+    } else {
+      setBackgroundPipelineStatus(filename, songFolderPath, 'running', 'transcript', {
+        status: openai ? 'skipped_already_done' : 'skipped_not_configured',
+      });
+    }
+
+    const metadataAfterTranscript = loadMetadata(filename, songFolderPath) || {};
+    if (!metadataAfterTranscript.beatAnalysis?.original) {
+      try {
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'analysis_original',
+          {
+            status: 'running',
+          }
+        );
+        await runSingleFlight(
+          analysisProcessingLocks,
+          `${songFolderPath}:${filename}:original`,
+          () => analyzeAndStoreStem(filename, songFolderPath, 'original')
+        );
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'analysis_original',
+          {
+            status: 'completed',
+          }
+        );
+      } catch (error) {
+        errors.push(`analysis_original: ${error.message}`);
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'analysis_original',
+          {
+            status: 'failed',
+            error: error.message,
+          }
+        );
+      }
+    } else {
+      setBackgroundPipelineStatus(
+        filename,
+        songFolderPath,
+        'running',
+        'analysis_original',
+        { status: 'skipped_already_done' }
+      );
+    }
+
+    const metadataAfterOriginalAnalysis = loadMetadata(filename, songFolderPath) || {};
+    const hasDrumsStem = (metadataAfterOriginalAnalysis.stems || []).some(
+      (stem) => stem.type === 'drums'
+    );
+    if (hasDrumsStem && !metadataAfterOriginalAnalysis.beatAnalysis?.drums) {
+      try {
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'analysis_drums',
+          {
+            status: 'running',
+          }
+        );
+        await runSingleFlight(
+          analysisProcessingLocks,
+          `${songFolderPath}:${filename}:drums`,
+          () => analyzeAndStoreStem(filename, songFolderPath, 'drums')
+        );
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'analysis_drums',
+          {
+            status: 'completed',
+          }
+        );
+      } catch (error) {
+        errors.push(`analysis_drums: ${error.message}`);
+        setBackgroundPipelineStatus(
+          filename,
+          songFolderPath,
+          'running',
+          'analysis_drums',
+          {
+            status: 'failed',
+            error: error.message,
+          }
+        );
+      }
+    } else {
+      setBackgroundPipelineStatus(
+        filename,
+        songFolderPath,
+        'running',
+        'analysis_drums',
+        {
+          status: hasDrumsStem ? 'skipped_already_done' : 'skipped_no_drums_stem',
+        }
+      );
+    }
+
+    setBackgroundPipelineStatus(
+      filename,
+      songFolderPath,
+      errors.length === 0 ? 'completed' : 'completed_with_errors'
+    );
+  })()
+    .catch((error) => {
+      console.error('❌ Background pipeline failed:', error);
+      setBackgroundPipelineStatus(filename, songFolderPath, 'failed', 'pipeline', {
+        status: 'failed',
+        error: error.message,
+      });
+    })
+    .finally(() => {
+      backgroundPipelineLocks.delete(key);
+    });
+
+  backgroundPipelineLocks.set(key, job);
+  return job;
 }
 
 // Route to get video info
@@ -528,6 +1005,7 @@ fastify.post('/api/download', async (request, reply) => {
               };
 
               saveMetadata(downloadedAudioFile, metadata, songFolderPath);
+              triggerBackgroundPipeline(downloadedAudioFile, songFolderPath);
 
               resolve(
                 reply.send({
@@ -691,6 +1169,7 @@ fastify.post('/api/upload', async (request, reply) => {
             };
 
             saveMetadata(outputFilename, metadata, songFolderPath);
+            triggerBackgroundPipeline(outputFilename, songFolderPath);
 
             resolve(
               reply.send({
@@ -743,76 +1222,16 @@ fastify.post('/api/generate-transcript', async (request, reply) => {
   }
 
   try {
-    console.log('🎙️  Starting transcript generation for:', filename);
-
-    // Create a ReadStream for the audio file
-    const audioStream = fs.createReadStream(filePath);
-
-    // Generate transcript using Whisper
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioStream,
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['word'],
-    });
-
-    console.log('✅ Transcript generation completed');
-
-    // Format the transcript text into readable lines using OpenAI
-    let formattedText = transcription.text;
-    try {
-      console.log('🎨 Formatting transcript text...');
-      const formattingResponse = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a transcript formatter. Break the given text into natural, readable lines with proper line breaks. Add line breaks at natural pauses, sentence boundaries, and logical breaks. Do not change the actual words, only add line breaks for readability. Return only the formatted text, no explanations.',
-          },
-          {
-            role: 'user',
-            content: transcription.text,
-          },
-        ],
-        max_tokens: 4000,
-        temperature: 0,
-      });
-
-      if (formattingResponse.choices[0]?.message?.content) {
-        formattedText = formattingResponse.choices[0].message.content.trim();
-        console.log('✅ Transcript formatting completed');
-      }
-    } catch (formattingError) {
-      console.warn(
-        '⚠️ Text formatting failed, using original text:',
-        formattingError.message
-      );
-      // Continue with unformatted text if formatting fails
-    }
-
-    // Update metadata with transcript
-    const existingMetadata = loadMetadata(filename, songFolderPath);
-    if (existingMetadata) {
-      existingMetadata.transcript = {
-        text: transcription.text,
-        formattedText: formattedText,
-        words: transcription.words || [],
-        segments: transcription.segments || [],
-        generatedAt: new Date().toISOString(),
-      };
-      saveMetadata(filename, existingMetadata, songFolderPath);
-    }
+    const transcript = await runSingleFlight(
+      transcriptProcessingLocks,
+      `${songFolderPath}:${filename}`,
+      () => generateTranscriptForFile(filename, songFolderPath)
+    );
 
     return reply.send({
       success: true,
       filename: filename,
-      transcript: {
-        text: transcription.text,
-        formattedText: formattedText,
-        words: transcription.words || [],
-        segments: transcription.segments || [],
-      },
+      transcript,
       message: 'Transcript generation completed successfully',
     });
   } catch (error) {
@@ -931,6 +1350,70 @@ fastify.get('/api/transcript/:filename', async (request, reply) => {
   }
 });
 
+// Route to analyze beats/slices for a selected stem
+fastify.post('/api/analyze-beats', async (request, reply) => {
+  const { filename, stemType = 'original', force = false } = request.body || {};
+
+  if (!filename) {
+    return reply.code(400).send({ error: 'Filename is required' });
+  }
+
+  try {
+    const folderName = createSafeFolderName(filename);
+    const songFolderPath = path.join(downloadsDir, folderName);
+    const metadata = loadMetadata(filename, songFolderPath);
+
+    if (!metadata) {
+      return reply.code(404).send({ error: 'Metadata not found for file' });
+    }
+
+    const audioPath = resolveAudioPathForStem(songFolderPath, filename, stemType);
+    if (!fs.existsSync(audioPath)) {
+      return reply
+        .code(404)
+        .send({ error: `Audio for stem "${stemType}" was not found` });
+    }
+
+    const cache = metadata.beatAnalysis || {};
+    if (cache[stemType] && !force) {
+      return reply.send({
+        success: true,
+        filename,
+        stemType,
+        fromCache: true,
+        analysis: cache[stemType],
+      });
+    }
+
+    const storedAnalysis = await runSingleFlight(
+      analysisProcessingLocks,
+      `${songFolderPath}:${filename}:${stemType}`,
+      () => analyzeAndStoreStem(filename, songFolderPath, stemType)
+    );
+
+    return reply.send({
+      success: true,
+      filename,
+      stemType,
+      fromCache: false,
+      analysis: storedAnalysis,
+    });
+  } catch (error) {
+    console.error('❌ Beat analysis failed:', error);
+    const msg = error.message || 'Beat analysis failed';
+    const missingDependencyHint =
+      msg.includes('No module named') || msg.includes('ModuleNotFoundError')
+        ? 'Install dependencies with: pip3 install librosa numpy'
+        : null;
+
+    return reply.code(500).send({
+      error: missingDependencyHint
+        ? `${msg}. ${missingDependencyHint}`
+        : msg,
+    });
+  }
+});
+
 // Route to separate stems using Fadr API
 fastify.post('/api/separate-stems', async (request, reply) => {
   const { filename } = request.body;
@@ -953,64 +1436,12 @@ fastify.post('/api/separate-stems', async (request, reply) => {
   }
 
   try {
-    console.log('🎵 Starting stem separation for:', filename);
-
-    // Step 1: Upload to Fadr
-    console.log('📤 Uploading to Fadr...');
-    const asset = await uploadToFadr(filePath, filename);
-    console.log('✅ Upload completed, asset ID:', asset._id);
-
-    // Step 2: Create stem task
-    console.log('⚙️  Creating stem task...');
-    const task = await createStemTask(asset._id);
-    console.log('✅ Stem task created, task ID:', task._id);
-
-    // Step 3: Poll for completion
-    console.log('⏳ Waiting for stem separation to complete...');
-    const completedTask = await pollTaskStatus(task._id);
-    console.log('✅ Stem separation completed');
-
-    // Step 5: Get stem assets
-    console.log('📥 Getting stem information...');
-    const stemIds = completedTask.asset.stems;
-    const stemResponses = await Promise.all(
-      stemIds.map((id) =>
-        axios.get(`${FADR_API_URL}/assets/${id}`, { headers: fadrApiHeaders })
-      )
+    const stemsInfo = await runSingleFlight(
+      stemProcessingLocks,
+      `${songFolderPath}:${filename}`,
+      () => separateStemsForFile(filename, songFolderPath)
     );
-
-    const stemAssets = stemResponses.map((response) => response.data.asset);
-
-    // Step 6: Download stems
-    console.log('💾 Downloading stems...');
-    const stemsInfo = [];
-
-    // Use the already defined songFolderPath
-
-    for (const stemAsset of stemAssets) {
-      const stemType = stemAsset.metaData.stemType;
-      const stemFilename = `${path.parse(filename).name}_${stemType}.mp3`;
-      const stemPath = path.join(songFolderPath, stemFilename);
-
-      await downloadStem(stemAsset._id, stemPath);
-
-      stemsInfo.push({
-        type: stemType,
-        filename: stemFilename,
-        streamUrl: `/api/file/${folderName}/${stemFilename}`,
-        downloadUrl: `/api/download/${folderName}/${stemFilename}`,
-      });
-    }
-
-    console.log('✅ Stem separation completed successfully!');
-
-    // Update metadata with stems info
-    const existingMetadata = loadMetadata(filename, songFolderPath);
-    if (existingMetadata) {
-      existingMetadata.stems = stemsInfo;
-      existingMetadata.stemsProcessedAt = new Date().toISOString();
-      saveMetadata(filename, existingMetadata, songFolderPath);
-    }
+    triggerBackgroundPipeline(filename, songFolderPath);
 
     return reply.send({
       success: true,

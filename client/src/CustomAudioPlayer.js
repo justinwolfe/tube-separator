@@ -33,6 +33,14 @@ const CustomAudioPlayer = ({
   const [showTranscript, setShowTranscript] = useState(false);
   const [startPoint, setStartPoint] = useState(null);
   const [downloadingFiles, setDownloadingFiles] = useState(new Set());
+  const [beatAnalysis, setBeatAnalysis] = useState(null);
+  const [analysisStem, setAnalysisStem] = useState('original');
+  const [sliceSize, setSliceSize] = useState('4');
+  const [selectedSliceId, setSelectedSliceId] = useState(null);
+  const [sliceLoopEnabled, setSliceLoopEnabled] = useState(false);
+  const [analyzingBeats, setAnalyzingBeats] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
+  const sliceStopTimeoutRef = useRef(null);
   const startPointRef = useRef(startPoint);
   useEffect(() => {
     startPointRef.current = startPoint;
@@ -118,6 +126,8 @@ const CustomAudioPlayer = ({
   const activeStemRef = useRef(activeStem);
   const isPlayingRef = useRef(isPlaying);
   const isProgrammaticSeekRef = useRef(false);
+  const selectedSliceIdRef = useRef(selectedSliceId);
+  const sliceLoopEnabledRef = useRef(sliceLoopEnabled);
 
   useEffect(() => {
     activeStemRef.current = activeStem;
@@ -126,6 +136,14 @@ const CustomAudioPlayer = ({
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    selectedSliceIdRef.current = selectedSliceId;
+  }, [selectedSliceId]);
+
+  useEffect(() => {
+    sliceLoopEnabledRef.current = sliceLoopEnabled;
+  }, [sliceLoopEnabled]);
 
   // Sync all waveforms to the same position
   const syncAllWaveforms = useCallback((time) => {
@@ -215,6 +233,33 @@ const CustomAudioPlayer = ({
     });
     setStemVolumes(initialVolumes);
   }, [stems]);
+
+  const analysisStemOptions = useMemo(
+    () => [
+      { value: 'original', label: 'Original mix' },
+      ...stems.map((stem) => ({
+        value: stem.type,
+        label: stem.type.charAt(0).toUpperCase() + stem.type.slice(1),
+      })),
+    ],
+    [stems]
+  );
+
+  useEffect(() => {
+    if (stems.some((stem) => stem.type === 'drums')) {
+      setAnalysisStem('drums');
+      return;
+    }
+    setAnalysisStem('original');
+  }, [sourceAudioFilename, stems]);
+
+  useEffect(() => {
+    setBeatAnalysis(null);
+    setSelectedSliceId(null);
+    setAnalysisError('');
+    setSliceSize('4');
+    setSliceLoopEnabled(false);
+  }, [sourceAudioFilename]);
 
   // Set up audio elements
   useEffect(() => {
@@ -336,6 +381,21 @@ const CustomAudioPlayer = ({
       const labelContainer = document.createElement('div');
       labelContainer.className = 'waveform-label-container';
 
+      const stemToggleBtn = document.createElement('button');
+      stemToggleBtn.className = `waveform-stem-toggle ${
+        track.type === activeStem ? 'active' : ''
+      }`;
+      stemToggleBtn.type = 'button';
+      stemToggleBtn.textContent = track.type === activeStem ? '●' : '○';
+      stemToggleBtn.title = `Select ${track.label} without seeking`;
+      stemToggleBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (activeStemRef.current !== track.type) {
+          handleStemToggle(track.type);
+        }
+      };
+      labelContainer.appendChild(stemToggleBtn);
+
       const label = document.createElement('div');
       label.className = 'waveform-label';
       label.textContent = track.label;
@@ -420,13 +480,6 @@ const CustomAudioPlayer = ({
         createOrUpdateStartMarker();
       });
 
-      // Handle clicking anywhere in the container to select this stem
-      container.addEventListener('click', () => {
-        if (activeStemRef.current !== track.type) {
-          handleStemToggle(track.type);
-        }
-      });
-
       const handleSeekProgress = (progress) => {
         if (isProgrammaticSeekRef.current) return;
         const target = progress * (ws.getDuration() || 0);
@@ -487,6 +540,14 @@ const CustomAudioPlayer = ({
         container.className = `waveform-item ${
           stemType === activeStem ? 'active' : ''
         }`;
+        const stemToggleBtn = container.querySelector('.waveform-stem-toggle');
+        if (stemToggleBtn) {
+          const isActive = stemType === activeStem;
+          stemToggleBtn.className = `waveform-stem-toggle ${
+            isActive ? 'active' : ''
+          }`;
+          stemToggleBtn.textContent = isActive ? '●' : '○';
+        }
       }
     });
 
@@ -575,13 +636,14 @@ const CustomAudioPlayer = ({
 
     try {
       if (isPlaying) {
-        originalAudio.pause();
-        Object.values(stemAudioRefs.current).forEach((audio) => {
-          if (audio) audio.pause();
-        });
-        if (videoRef.current) videoRef.current.pause();
-        setIsPlaying(false);
+        stopAllPlayback();
       } else {
+        // If a slice is selected, play only that slice (with optional loop).
+        if (selectedSliceIdRef.current && selectedSlice) {
+          await playSlice(selectedSlice);
+          return;
+        }
+
         // Determine resume point honoring startPoint
         const resumeAt = startPoint != null ? startPoint : currentTime;
 
@@ -705,6 +767,10 @@ const CustomAudioPlayer = ({
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (sliceStopTimeoutRef.current) {
+        clearTimeout(sliceStopTimeoutRef.current);
+        sliceStopTimeoutRef.current = null;
       }
     };
   }, []);
@@ -1106,6 +1172,138 @@ const CustomAudioPlayer = ({
     }
   };
 
+  const clearSlicePlaybackTimeout = useCallback(() => {
+    if (sliceStopTimeoutRef.current) {
+      clearTimeout(sliceStopTimeoutRef.current);
+      sliceStopTimeoutRef.current = null;
+    }
+  }, []);
+
+  const stopAllPlayback = useCallback(() => {
+    clearSlicePlaybackTimeout();
+    const originalAudio = originalAudioRef.current;
+    if (originalAudio) originalAudio.pause();
+    Object.values(stemAudioRefs.current).forEach((audio) => {
+      if (audio) audio.pause();
+    });
+    if (videoRef.current) videoRef.current.pause();
+    setIsPlaying(false);
+  }, [clearSlicePlaybackTimeout]);
+
+  const fetchBeatAnalysis = useCallback(
+    async (force = false) => {
+      if (!sourceAudioFilename) return;
+
+      setAnalyzingBeats(true);
+      setAnalysisError('');
+      try {
+        const response = await fetch('/api/analyze-beats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: sourceAudioFilename,
+            stemType: analysisStem,
+            force,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Beat analysis failed');
+        }
+        setBeatAnalysis(data.analysis);
+        setSelectedSliceId(null);
+      } catch (error) {
+        console.error('beat analysis failed', error);
+        setAnalysisError(error.message || 'Beat analysis failed');
+      } finally {
+        setAnalyzingBeats(false);
+      }
+    },
+    [analysisStem, sourceAudioFilename]
+  );
+
+  const activeSlices = useMemo(() => {
+    if (!beatAnalysis?.slices) return [];
+    return beatAnalysis.slices[sliceSize] || [];
+  }, [beatAnalysis, sliceSize]);
+
+  const selectedSlice = useMemo(() => {
+    if (!selectedSliceId || !activeSlices.length) return null;
+    return activeSlices.find((slice) => slice.id === selectedSliceId) || null;
+  }, [activeSlices, selectedSliceId]);
+
+  useEffect(() => {
+    if (!activeSlices.some((slice) => slice.id === selectedSliceId)) {
+      setSelectedSliceId(null);
+    }
+  }, [activeSlices, selectedSliceId]);
+
+  const playSlice = useCallback(
+    async (slice) => {
+      if (!slice) return;
+
+      clearSlicePlaybackTimeout();
+
+      setSelectedSliceId(slice.id);
+      setStartPoint(slice.start);
+      setCurrentTime(slice.start);
+      syncAudioElements(slice.start);
+
+      const activeAudio =
+        activeStemRef.current === 'original'
+          ? originalAudioRef.current
+          : stemAudioRefs.current[activeStemRef.current];
+
+      if (!activeAudio) return;
+
+      try {
+        await activeAudio.play();
+        if (videoRef.current) {
+          try {
+            await videoRef.current.play();
+          } catch {}
+        }
+        setIsPlaying(true);
+      } catch (error) {
+        console.error('slice play failed', error);
+        return;
+      }
+
+      const ms = Math.max(40, Math.round((slice.end - slice.start) * 1000));
+      const scheduleStop = () => {
+        sliceStopTimeoutRef.current = setTimeout(async () => {
+          if (
+            sliceLoopEnabledRef.current &&
+            selectedSliceIdRef.current === slice.id
+          ) {
+            setCurrentTime(slice.start);
+            syncAudioElements(slice.start);
+            try {
+              await activeAudio.play();
+            } catch {}
+            scheduleStop();
+            return;
+          }
+          stopAllPlayback();
+          sliceStopTimeoutRef.current = null;
+        }, ms);
+      };
+      scheduleStop();
+    },
+    [clearSlicePlaybackTimeout, stopAllPlayback, syncAudioElements]
+  );
+
+  const jumpToSlice = useCallback(
+    (slice) => {
+      if (!slice) return;
+      setSelectedSliceId(slice.id);
+      setStartPoint(slice.start);
+      setCurrentTime(slice.start);
+      syncAudioElements(slice.start);
+    },
+    [syncAudioElements]
+  );
+
   // Format time display
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -1312,6 +1510,119 @@ const CustomAudioPlayer = ({
           >
             📹
           </button>
+        )}
+      </div>
+
+      <div className="slice-lab">
+        <div className="slice-lab-header">
+          <h5>Slice Lab</h5>
+          <span className="slice-meta">
+            {beatAnalysis?.bpm ? `${Math.round(beatAnalysis.bpm)} BPM` : '--'}
+          </span>
+        </div>
+
+        <div className="slice-controls">
+          <label className="slice-control">
+            <span>Analyze stem</span>
+            <select
+              value={analysisStem}
+              onChange={(e) => setAnalysisStem(e.target.value)}
+              disabled={analyzingBeats}
+            >
+              {analysisStemOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="slice-control">
+            <span>Slice length</span>
+            <select
+              value={sliceSize}
+              onChange={(e) => setSliceSize(e.target.value)}
+            >
+              <option value="1">1 beat</option>
+              <option value="2">2 beats</option>
+              <option value="4">4 beats</option>
+              <option value="8">8 beats</option>
+              <option value="2bar">2 bars</option>
+              <option value="4bar">4 bars</option>
+            </select>
+          </label>
+
+          <button
+            className="slice-action-btn"
+            onClick={() => fetchBeatAnalysis(false)}
+            disabled={analyzingBeats || !sourceAudioFilename}
+          >
+            {analyzingBeats ? 'Analyzing...' : 'Analyze beats'}
+          </button>
+
+          <button
+            className="slice-action-btn subtle"
+            onClick={() => fetchBeatAnalysis(true)}
+            disabled={analyzingBeats || !sourceAudioFilename}
+          >
+            Re-run
+          </button>
+        </div>
+
+        {analysisError && <div className="slice-error">{analysisError}</div>}
+
+        {beatAnalysis && (
+          <>
+            <div className="slice-stats">
+              <span>{beatAnalysis.beatCount || 0} beats</span>
+              <span>{activeSlices.length} slices</span>
+              <label className="slice-loop-toggle">
+                <input
+                  type="checkbox"
+                  checked={sliceLoopEnabled}
+                  onChange={(e) => setSliceLoopEnabled(e.target.checked)}
+                />
+                Loop selected
+              </label>
+            </div>
+
+            <div className="slice-grid">
+              {activeSlices.map((slice) => (
+                <button
+                  key={slice.id}
+                  className={`slice-pad ${
+                    selectedSliceId === slice.id ? 'active' : ''
+                  }`}
+                  onClick={() => playSlice(slice)}
+                >
+                  <span className="slice-pad-index">#{slice.id}</span>
+                  <span className="slice-pad-time">
+                    {formatTime(slice.start)}-{formatTime(slice.end)}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {selectedSlice && (
+              <div className="slice-selected-actions">
+                <span>
+                  Slice #{selectedSlice.id} ({selectedSlice.duration.toFixed(2)}s)
+                </span>
+                <button
+                  className="slice-action-btn"
+                  onClick={() => playSlice(selectedSlice)}
+                >
+                  Preview slice
+                </button>
+                <button
+                  className="slice-action-btn subtle"
+                  onClick={() => setStartPoint(selectedSlice.start)}
+                >
+                  Set start marker
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
