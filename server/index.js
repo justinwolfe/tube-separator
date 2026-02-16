@@ -74,6 +74,12 @@ if (!fs.existsSync(metadataDir)) {
   fs.mkdirSync(metadataDir, { recursive: true });
 }
 
+// Create favorites directory if it doesn't exist
+const favoritesDir = path.join(__dirname, 'favorites');
+if (!fs.existsSync(favoritesDir)) {
+  fs.mkdirSync(favoritesDir, { recursive: true });
+}
+
 const scriptsDir = path.join(__dirname, 'scripts');
 const beatAnalysisScriptPath = path.join(scriptsDir, 'beat_analysis.py');
 const venvPythonPath = path.join(projectRoot, '.venv', 'bin', 'python3');
@@ -356,6 +362,65 @@ async function downloadStem(assetId, outputPath) {
     );
     throw error;
   }
+}
+
+async function clipAudioSegment(inputPath, outputPath, startSec, endSec) {
+  const start = Math.max(0, Number(startSec) || 0);
+  const end = Math.max(start + 0.05, Number(endSec) || start + 0.05);
+
+  await new Promise((resolve, reject) => {
+    const ff = spawn('ffmpeg', [
+      '-y',
+      '-ss',
+      start.toFixed(6),
+      '-to',
+      end.toFixed(6),
+      '-i',
+      inputPath,
+      '-vn',
+      '-acodec',
+      'mp3',
+      '-ab',
+      '192k',
+      '-ar',
+      '44100',
+      outputPath,
+    ]);
+    let err = '';
+    ff.stderr.on('data', (c) => (err += c));
+    ff.on('close', (code) => {
+      if (code === 0) return resolve(null);
+      return reject(new Error(err || 'ffmpeg slice export failed'));
+    });
+  });
+}
+
+function getFavoriteAudioEntries(favoriteId, favoriteFolderPath) {
+  const entries = [];
+  if (!fs.existsSync(favoriteFolderPath)) return entries;
+
+  const files = fs.readdirSync(favoriteFolderPath);
+  for (const file of files) {
+    if (!file.endsWith('.mp3')) continue;
+    const stemType = path.parse(file).name;
+    entries.push({
+      type: stemType,
+      filename: file,
+      streamUrl: `/api/favorite-file/${favoriteId}/${file}`,
+      downloadUrl: `/api/favorite-download/${favoriteId}/${file}`,
+    });
+  }
+
+  const order = ['original', 'drums', 'bass', 'vocals', 'melodies', 'instrumental', 'other'];
+  entries.sort((a, b) => {
+    const ai = order.indexOf(a.type);
+    const bi = order.indexOf(b.type);
+    if (ai === -1 && bi === -1) return a.type.localeCompare(b.type);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+  return entries;
 }
 
 async function separateStemsForFile(filename, songFolderPath) {
@@ -1412,6 +1477,244 @@ fastify.post('/api/analyze-beats', async (request, reply) => {
         : msg,
     });
   }
+});
+
+// Create a persistent favorite slice (copies audio clips for original + available stems)
+fastify.post('/api/favorites/add-slice', async (request, reply) => {
+  const {
+    filename,
+    slice,
+    sliceSize = null,
+    analysisStem = null,
+    sourceTitle = null,
+  } = request.body || {};
+
+  if (!filename || !slice || slice.start == null || slice.end == null) {
+    return reply
+      .code(400)
+      .send({ error: 'filename and slice(start/end) are required' });
+  }
+
+  const startSec = Number(slice.start);
+  const endSec = Number(slice.end);
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
+    return reply.code(400).send({ error: 'Invalid slice bounds' });
+  }
+
+  try {
+    const folderName = createSafeFolderName(filename);
+    const songFolderPath = path.join(downloadsDir, folderName);
+    const metadata = loadMetadata(filename, songFolderPath);
+    if (!metadata) {
+      return reply.code(404).send({ error: 'Source metadata not found' });
+    }
+
+    const sourceEntries = [{ type: 'original', filename }];
+    for (const stem of metadata.stems || []) {
+      if (stem?.type && stem?.filename) {
+        sourceEntries.push({ type: stem.type, filename: stem.filename });
+      }
+    }
+
+    const existingFavoriteMatches = (fs.existsSync(favoritesDir)
+      ? fs.readdirSync(favoritesDir)
+      : []
+    ).filter((id) => {
+      const favMetaPath = path.join(favoritesDir, id, 'metadata.json');
+      if (!fs.existsSync(favMetaPath)) return false;
+      try {
+        const favMeta = JSON.parse(fs.readFileSync(favMetaPath, 'utf8'));
+        return (
+          favMeta?.source?.filename === filename &&
+          Math.abs((favMeta?.slice?.start || 0) - startSec) < 0.02 &&
+          Math.abs((favMeta?.slice?.end || 0) - endSec) < 0.02
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (existingFavoriteMatches.length > 0) {
+      const favoriteId = existingFavoriteMatches[0];
+      const favoriteFolderPath = path.join(favoritesDir, favoriteId);
+      const favoriteMetadata = JSON.parse(
+        fs.readFileSync(path.join(favoriteFolderPath, 'metadata.json'), 'utf8')
+      );
+      const audioEntries = getFavoriteAudioEntries(favoriteId, favoriteFolderPath);
+      return reply.send({
+        success: true,
+        alreadyExists: true,
+        favorite: {
+          id: favoriteId,
+          metadata: favoriteMetadata,
+          audioEntries,
+          original: audioEntries.find((entry) => entry.type === 'original') || null,
+          stems: audioEntries.filter((entry) => entry.type !== 'original'),
+        },
+      });
+    }
+
+    const favoriteId = `fav_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const favoriteFolderPath = path.join(favoritesDir, favoriteId);
+    fs.mkdirSync(favoriteFolderPath, { recursive: true });
+
+    const clippedEntries = [];
+    for (const sourceEntry of sourceEntries) {
+      const inputPath = path.join(songFolderPath, sourceEntry.filename);
+      if (!fs.existsSync(inputPath)) continue;
+      const outputFilename = `${sourceEntry.type}.mp3`;
+      const outputPath = path.join(favoriteFolderPath, outputFilename);
+      await clipAudioSegment(inputPath, outputPath, startSec, endSec);
+      clippedEntries.push({
+        type: sourceEntry.type,
+        filename: outputFilename,
+      });
+    }
+
+    if (clippedEntries.length === 0) {
+      return reply.code(500).send({ error: 'Failed to create clipped favorite files' });
+    }
+
+    const favoriteMetadata = {
+      id: favoriteId,
+      createdAt: new Date().toISOString(),
+      source: {
+        filename,
+        folderName,
+        title: sourceTitle || metadata.title || filename,
+        uploader: metadata.uploader || null,
+        thumbnail: metadata.thumbnail || null,
+      },
+      slice: {
+        ...slice,
+        start: startSec,
+        end: endSec,
+        duration: endSec - startSec,
+        sliceSize,
+        analysisStem,
+      },
+      availableTypes: clippedEntries.map((entry) => entry.type),
+    };
+    saveMetadata(favoriteId, favoriteMetadata, favoriteFolderPath);
+
+    const audioEntries = getFavoriteAudioEntries(favoriteId, favoriteFolderPath);
+    return reply.send({
+      success: true,
+      favorite: {
+        id: favoriteId,
+        metadata: favoriteMetadata,
+        audioEntries,
+        original: audioEntries.find((entry) => entry.type === 'original') || null,
+        stems: audioEntries.filter((entry) => entry.type !== 'original'),
+      },
+    });
+  } catch (error) {
+    console.error('❌ Failed to add favorite slice:', error);
+    return reply
+      .code(500)
+      .send({ error: error.message || 'Failed to add favorite slice' });
+  }
+});
+
+// List global favorite slices
+fastify.get('/api/favorites', async (request, reply) => {
+  try {
+    const ids = fs.existsSync(favoritesDir)
+      ? fs.readdirSync(favoritesDir).filter((item) => {
+          const itemPath = path.join(favoritesDir, item);
+          return fs.statSync(itemPath).isDirectory();
+        })
+      : [];
+
+    const favorites = [];
+    for (const id of ids) {
+      const favoriteFolderPath = path.join(favoritesDir, id);
+      const metadataPath = path.join(favoriteFolderPath, 'metadata.json');
+      if (!fs.existsSync(metadataPath)) continue;
+
+      let metadata = null;
+      try {
+        metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+      } catch {
+        continue;
+      }
+
+      const audioEntries = getFavoriteAudioEntries(id, favoriteFolderPath);
+      if (audioEntries.length === 0) continue;
+
+      favorites.push({
+        id,
+        metadata,
+        audioEntries,
+        original: audioEntries.find((entry) => entry.type === 'original') || null,
+        stems: audioEntries.filter((entry) => entry.type !== 'original'),
+      });
+    }
+
+    favorites.sort(
+      (a, b) =>
+        new Date(b.metadata?.createdAt || 0) - new Date(a.metadata?.createdAt || 0)
+    );
+    return reply.send(favorites);
+  } catch (error) {
+    console.error('❌ Failed to load favorites:', error);
+    return reply.code(500).send({ error: 'Failed to load favorites' });
+  }
+});
+
+fastify.get('/api/favorite-file/:favoriteId/:filename', async (request, reply) => {
+  const { favoriteId, filename } = request.params;
+  const filePath = path.join(favoritesDir, favoriteId, filename);
+  if (!fs.existsSync(filePath)) {
+    return reply.code(404).send({ error: 'File not found' });
+  }
+
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+  const range = request.headers.range;
+  const contentType = 'audio/mpeg';
+
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunksize = end - start + 1;
+    const file = fs.createReadStream(filePath, { start, end });
+
+    reply.headers({
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunksize,
+      'Content-Type': contentType,
+    });
+    reply.code(206);
+    return reply.send(file);
+  }
+
+  reply.headers({
+    'Content-Length': fileSize,
+    'Content-Type': contentType,
+  });
+  return reply.send(fs.createReadStream(filePath));
+});
+
+fastify.get('/api/favorite-download/:favoriteId/:filename', async (request, reply) => {
+  const { favoriteId, filename } = request.params;
+  const filePath = path.join(favoritesDir, favoriteId, filename);
+  if (!fs.existsSync(filePath)) {
+    return reply.code(404).send({ error: 'File not found' });
+  }
+
+  reply.headers({
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Content-Type': 'audio/mpeg',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Cache-Control': 'no-cache',
+  });
+  return reply.send(fs.createReadStream(filePath));
 });
 
 // Route to separate stems using Fadr API

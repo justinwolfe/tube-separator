@@ -18,6 +18,8 @@ const CustomAudioPlayer = ({
   onSeekToTime,
   videoUrl = null,
   sourceAudioFilename = null,
+  onFavoriteSlice = null,
+  showSliceLab = true,
   // Add download URL props
   originalDownloadUrl = null,
   videoDownloadUrl = null,
@@ -40,6 +42,8 @@ const CustomAudioPlayer = ({
   const [sliceLoopEnabled, setSliceLoopEnabled] = useState(false);
   const [analyzingBeats, setAnalyzingBeats] = useState(false);
   const [analysisError, setAnalysisError] = useState('');
+  const [favoritingSlice, setFavoritingSlice] = useState(false);
+  const [favoriteMessage, setFavoriteMessage] = useState('');
   const sliceStopTimeoutRef = useRef(null);
   const startPointRef = useRef(startPoint);
   useEffect(() => {
@@ -1304,6 +1308,41 @@ const CustomAudioPlayer = ({
     [syncAudioElements]
   );
 
+  const handleFavoriteSelectedSlice = useCallback(async () => {
+    if (!onFavoriteSlice || !selectedSlice || !sourceAudioFilename) return;
+
+    setFavoritingSlice(true);
+    setFavoriteMessage('');
+    try {
+      const result = await onFavoriteSlice({
+        filename: sourceAudioFilename,
+        sourceTitle: title || sourceAudioFilename,
+        slice: selectedSlice,
+        sliceSize,
+        analysisStem,
+      });
+      if (result?.alreadyExists) {
+        setFavoriteMessage('already in favorites');
+      } else {
+        setFavoriteMessage('saved to favorites');
+      }
+      setTimeout(() => setFavoriteMessage(''), 2400);
+    } catch (error) {
+      console.error('favorite slice failed', error);
+      setFavoriteMessage(error?.message || 'favorite failed');
+      setTimeout(() => setFavoriteMessage(''), 3000);
+    } finally {
+      setFavoritingSlice(false);
+    }
+  }, [
+    analysisStem,
+    onFavoriteSlice,
+    selectedSlice,
+    sliceSize,
+    sourceAudioFilename,
+    title,
+  ]);
+
   // Format time display
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -1511,8 +1550,22 @@ const CustomAudioPlayer = ({
             📹
           </button>
         )}
+
+        {onFavoriteSlice && selectedSlice && sourceAudioFilename && (
+          <button
+            className="favorite-slice-btn"
+            onClick={handleFavoriteSelectedSlice}
+            title="save selected slice to favorites"
+            disabled={favoritingSlice}
+          >
+            {favoritingSlice ? '...' : '★'}
+          </button>
+        )}
       </div>
 
+      {favoriteMessage && <div className="favorite-slice-message">{favoriteMessage}</div>}
+
+      {showSliceLab && (
       <div className="slice-lab">
         <div className="slice-lab-header">
           <h5>Slice Lab</h5>
@@ -1620,11 +1673,21 @@ const CustomAudioPlayer = ({
                 >
                   Set start marker
                 </button>
+                {onFavoriteSlice && sourceAudioFilename && (
+                  <button
+                    className="slice-action-btn"
+                    onClick={handleFavoriteSelectedSlice}
+                    disabled={favoritingSlice}
+                  >
+                    {favoritingSlice ? 'Saving...' : 'Favorite slice'}
+                  </button>
+                )}
               </div>
             )}
           </>
         )}
       </div>
+      )}
 
       {/* Transcript Section */}
       {transcript && (

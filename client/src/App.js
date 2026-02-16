@@ -13,6 +13,8 @@ function App() {
   const [separatingStems, setSeparatingStems] = useState(false);
   const [savedFiles, setSavedFiles] = useState([]);
   const [savedFilesLoading, setSavedFilesLoading] = useState(false);
+  const [favoriteClips, setFavoriteClips] = useState([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [transcripts, setTranscripts] = useState({});
@@ -22,6 +24,7 @@ function App() {
   // Load saved files on app startup
   React.useEffect(() => {
     loadSavedFiles();
+    loadFavorites();
   }, []);
 
   const loadSavedFiles = async () => {
@@ -34,6 +37,39 @@ function App() {
     } finally {
       setSavedFilesLoading(false);
     }
+  };
+
+  const loadFavorites = async () => {
+    setFavoritesLoading(true);
+    try {
+      const response = await axios.get('/api/favorites');
+      setFavoriteClips(response.data || []);
+    } catch (err) {
+      console.error('failed to load favorites:', err);
+    } finally {
+      setFavoritesLoading(false);
+    }
+  };
+
+  const handleFavoriteSlice = async ({
+    filename,
+    sourceTitle,
+    slice,
+    sliceSize,
+    analysisStem,
+  }) => {
+    const response = await axios.post('/api/favorites/add-slice', {
+      filename,
+      sourceTitle,
+      slice,
+      sliceSize,
+      analysisStem,
+    });
+    await loadFavorites();
+    return {
+      alreadyExists: !!response.data?.alreadyExists,
+      favorite: response.data?.favorite || null,
+    };
   };
 
   const generateTranscript = async (filename) => {
@@ -371,7 +407,17 @@ function App() {
           loadTranscript={loadTranscript}
           formatTranscript={formatTranscript}
           generatingTranscript={generatingTranscript}
+          onFavoriteSlice={handleFavoriteSlice}
         />
+
+        {/* Favorites section */}
+        <div className="saved-section">
+          <h2 className="saved-section-title">favorite clips</h2>
+          <FavoritesView
+            favorites={favoriteClips}
+            loading={favoritesLoading}
+          />
+        </div>
 
         {/* Saved files section */}
         {savedFiles.length > 0 && (
@@ -387,6 +433,7 @@ function App() {
               loadTranscript={loadTranscript}
               formatTranscript={formatTranscript}
               generatingTranscript={generatingTranscript}
+              onFavoriteSlice={handleFavoriteSlice}
             />
           </div>
         )}
@@ -419,6 +466,7 @@ function MainView({
   loadTranscript,
   formatTranscript,
   generatingTranscript,
+  onFavoriteSlice,
 }) {
   const [dragActive, setDragActive] = useState(false);
   // Load transcript when extraction result becomes available
@@ -619,6 +667,8 @@ function MainView({
                 transcript={transcripts[extractionResult.filename]}
                 videoUrl={extractionResult.videoStreamUrl || null}
                 sourceAudioFilename={extractionResult.filename}
+                title={videoInfo?.title || extractionResult.filename}
+                onFavoriteSlice={onFavoriteSlice}
                 originalDownloadUrl={extractionResult.downloadUrl}
                 videoDownloadUrl={extractionResult.videoDownloadUrl || null}
               />
@@ -657,6 +707,109 @@ function MainView({
   );
 }
 
+function FavoritesView({ favorites, loading }) {
+  if (loading) {
+    return (
+      <div className="saved-loading">
+        <div className="loading-message">loading favorite clips...</div>
+      </div>
+    );
+  }
+
+  if (!favorites || favorites.length === 0) {
+    return (
+      <div className="saved-empty">
+        <div className="empty-message">
+          <h3>no favorite clips yet</h3>
+          <p>select a slice and tap the star to save it here</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="saved-files">
+      {favorites.map((favorite) => (
+        <FavoriteClipItem
+          key={favorite.id}
+          favorite={favorite}
+        />
+      ))}
+    </div>
+  );
+}
+
+function FavoriteClipItem({ favorite }) {
+  const [expanded, setExpanded] = useState(false);
+  const metadata = favorite.metadata || {};
+  const source = metadata.source || {};
+  const slice = metadata.slice || {};
+
+  const createdAt = metadata.createdAt
+    ? new Date(metadata.createdAt).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'unknown date';
+
+  return (
+    <div className="saved-file-item">
+      <div className="saved-file-header" onClick={() => setExpanded(!expanded)}>
+        <div className="saved-file-info">
+          {source.thumbnail && (
+            <img
+              src={source.thumbnail}
+              alt="Source thumbnail"
+              className="saved-thumbnail"
+            />
+          )}
+          <div className="saved-details">
+            <h3>{source.title || source.filename || 'favorite clip'}</h3>
+            <p className="saved-uploader">favorite slice</p>
+            <div className="saved-meta">
+              <span>
+                slice {Math.max(0, slice.start || 0).toFixed(2)}s-
+                {Math.max(0, slice.end || 0).toFixed(2)}s
+              </span>
+              <span>
+                {slice.duration
+                  ? `${Math.max(0, Number(slice.duration)).toFixed(2)}s`
+                  : 'short clip'}
+              </span>
+              <span>{createdAt}</span>
+              {favorite.stems?.length > 0 && (
+                <span className="saved-stems-count">
+                  {favorite.stems.length} stems
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="expand-arrow">{expanded ? '▼' : '▶'}</div>
+      </div>
+
+      {expanded && favorite.original && (
+        <div className="saved-file-content">
+          <CustomAudioPlayer
+            originalTrack={favorite.original.streamUrl}
+            stems={favorite.stems || []}
+            title={`${source.title || source.filename || 'favorite'} | ${
+              slice.sliceSize || 'slice'
+            }`}
+            className="saved-player"
+            sourceAudioFilename={null}
+            showSliceLab={false}
+            originalDownloadUrl={favorite.original.downloadUrl}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Saved tab component
 function SavedView({
   savedFiles,
@@ -668,6 +821,7 @@ function SavedView({
   loadTranscript,
   formatTranscript,
   generatingTranscript,
+  onFavoriteSlice,
 }) {
   if (loading) {
     return (
@@ -701,6 +855,7 @@ function SavedView({
           loadTranscript={loadTranscript}
           formatTranscript={formatTranscript}
           generatingTranscript={generatingTranscript}
+          onFavoriteSlice={onFavoriteSlice}
         />
       ))}
     </div>
@@ -717,6 +872,7 @@ function SavedFileItem({
   loadTranscript,
   formatTranscript,
   generatingTranscript,
+  onFavoriteSlice,
 }) {
   const { original, stems, metadata, video } = fileGroup;
   const [expanded, setExpanded] = useState(false);
@@ -801,6 +957,7 @@ function SavedFileItem({
                 : null
             }
             sourceAudioFilename={original.filename}
+            onFavoriteSlice={onFavoriteSlice}
             originalDownloadUrl={original.downloadUrl}
             videoDownloadUrl={video?.downloadUrl || null}
           />

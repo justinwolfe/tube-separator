@@ -238,6 +238,32 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+.favorite-slice-btn {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 226, 120, 0.4);
+  background: rgba(255, 226, 120, 0.12);
+  color: #ffe992;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.favorite-slice-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.favorite-slice-message {
+  text-align: center;
+  margin-bottom: 10px;
+  color: rgba(255, 226, 120, 0.9);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
 .slice-lab {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin-top: 18px;
