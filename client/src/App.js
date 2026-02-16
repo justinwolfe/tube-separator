@@ -57,6 +57,7 @@ function App() {
     slice,
     sliceSize,
     analysisStem,
+    selectedStem,
   }) => {
     const response = await axios.post('/api/favorites/add-slice', {
       filename,
@@ -64,6 +65,7 @@ function App() {
       slice,
       sliceSize,
       analysisStem,
+      selectedStem,
     });
     await loadFavorites();
     return {
@@ -793,19 +795,101 @@ function FavoriteClipItem({ favorite }) {
 
       {expanded && favorite.original && (
         <div className="saved-file-content">
-          <CustomAudioPlayer
-            originalTrack={favorite.original.streamUrl}
-            stems={favorite.stems || []}
-            title={`${source.title || source.filename || 'favorite'} | ${
-              slice.sliceSize || 'slice'
-            }`}
-            className="saved-player"
-            sourceAudioFilename={null}
-            showSliceLab={false}
-            originalDownloadUrl={favorite.original.downloadUrl}
-          />
+          <FavoriteClipPlayer favorite={favorite} />
         </div>
       )}
+    </div>
+  );
+}
+
+function FavoriteClipPlayer({ favorite }) {
+  const allEntries = favorite.audioEntries || [];
+  const preferredStem = favorite.metadata?.slice?.selectedStem || 'original';
+  const preferredExists = allEntries.some((entry) => entry.type === preferredStem);
+  const [activeStem, setActiveStem] = useState(
+    preferredExists ? preferredStem : 'original'
+  );
+  const [loopEnabled, setLoopEnabled] = useState(false);
+  const audioRef = React.useRef(null);
+  const playerIdRef = React.useRef(
+    `favorite-player-${Math.random().toString(36).slice(2, 10)}`
+  );
+
+  React.useEffect(() => {
+    const stemStillExists = allEntries.some((entry) => entry.type === activeStem);
+    if (!stemStillExists) {
+      const nextStem = allEntries.some((entry) => entry.type === preferredStem)
+        ? preferredStem
+        : 'original';
+      setActiveStem(nextStem);
+    }
+  }, [activeStem, allEntries, preferredStem]);
+
+  const activeEntry =
+    allEntries.find((entry) => entry.type === activeStem) || favorite.original;
+  const stemLabel = (type) =>
+    type === 'original' ? 'Original mix' : type.charAt(0).toUpperCase() + type.slice(1);
+
+  if (!activeEntry) return null;
+
+  React.useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.loop = loopEnabled;
+    }
+  }, [loopEnabled, activeStem]);
+
+  React.useEffect(() => {
+    const handleExternalPlayback = (event) => {
+      const sourceId = event?.detail?.sourceId;
+      if (!sourceId || sourceId === playerIdRef.current) return;
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+    window.addEventListener('global-audio-play', handleExternalPlayback);
+    return () =>
+      window.removeEventListener('global-audio-play', handleExternalPlayback);
+  }, []);
+
+  const announcePlayback = () => {
+    window.dispatchEvent(
+      new CustomEvent('global-audio-play', {
+        detail: { sourceId: playerIdRef.current },
+      })
+    );
+  };
+
+  return (
+    <div className="favorite-mini-player">
+      <div className="favorite-mini-row">
+        <label htmlFor={`fav-stem-${favorite.id}`}>Stem</label>
+        <select
+          id={`fav-stem-${favorite.id}`}
+          value={activeStem}
+          onChange={(e) => setActiveStem(e.target.value)}
+        >
+          {allEntries.map((entry) => (
+            <option key={entry.type} value={entry.type}>
+              {stemLabel(entry.type)}
+            </option>
+          ))}
+        </select>
+        <label className="favorite-mini-loop">
+          <input
+            type="checkbox"
+            checked={loopEnabled}
+            onChange={(e) => setLoopEnabled(e.target.checked)}
+          />
+          Loop
+        </label>
+      </div>
+      <audio
+        ref={audioRef}
+        controls
+        preload="metadata"
+        src={activeEntry.streamUrl}
+        onPlay={announcePlayback}
+      />
     </div>
   );
 }

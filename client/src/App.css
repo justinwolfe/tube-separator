@@ -557,7 +557,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 30px;
+  padding: 18px 20px;
   cursor: pointer;
   transition: all 0.3s ease;
 }
@@ -568,14 +568,15 @@
 
 .saved-file-info {
   display: flex;
-  gap: 24px;
-  align-items: flex-start;
+  gap: 12px;
+  align-items: center;
   flex: 1;
+  min-width: 0;
 }
 
 .saved-thumbnail {
-  width: 120px;
-  height: 68px;
+  width: 92px;
+  height: 52px;
   object-fit: cover;
   flex-shrink: 0;
   filter: grayscale(20%) contrast(1.1);
@@ -593,26 +594,31 @@
 
 .saved-details h3 {
   margin: 0 0 8px 0;
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 300;
-  line-height: 1.4;
-  word-wrap: break-word;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #ffffff;
 }
 
 .saved-uploader {
-  margin: 0 0 12px 0;
+  margin: 0 0 6px 0;
   opacity: 0.6;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 300;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .saved-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  font-size: 0.75rem;
+  gap: 8px;
+  font-size: 0.7rem;
   opacity: 0.5;
   font-weight: 300;
   letter-spacing: 0.5px;
@@ -641,9 +647,47 @@
 }
 
 .saved-file-content {
-  padding: 0 30px 30px 30px;
+  padding: 0 16px 16px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   background: rgba(255, 255, 255, 0.01);
+}
+
+.favorite-mini-player {
+  padding-top: 12px;
+}
+
+.favorite-mini-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.favorite-mini-row label {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.favorite-mini-row select {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+}
+
+.favorite-mini-loop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-left: auto;
+}
+
+.favorite-mini-player audio {
+  width: 100%;
+  height: 40px;
 }
 
 .saved-original,
@@ -729,29 +773,30 @@
   }
 
   .saved-file-header {
-    padding: 20px;
+    padding: 12px 14px;
   }
 
   .saved-file-info {
-    flex-direction: column;
-    text-align: center;
-    gap: 16px;
+    flex-direction: row;
+    text-align: left;
+    gap: 10px;
+    align-items: center;
   }
 
   .saved-thumbnail {
-    width: 100%;
-    height: 150px;
-    max-width: 250px;
-    margin: 0 auto;
+    width: 76px;
+    height: 44px;
+    max-width: none;
+    margin: 0;
   }
 
   .saved-meta {
-    justify-content: center;
-    gap: 12px;
+    justify-content: flex-start;
+    gap: 6px;
   }
 
   .saved-file-content {
-    padding: 0 20px 20px 20px;
+    padding: 0 12px 12px 12px;
   }
 
   .saved-stems-grid {

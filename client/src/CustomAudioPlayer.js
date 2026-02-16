@@ -45,6 +45,9 @@ const CustomAudioPlayer = ({
   const [favoritingSlice, setFavoritingSlice] = useState(false);
   const [favoriteMessage, setFavoriteMessage] = useState('');
   const sliceStopTimeoutRef = useRef(null);
+  const playbackInstanceIdRef = useRef(
+    `custom-player-${Math.random().toString(36).slice(2, 10)}`
+  );
   const startPointRef = useRef(startPoint);
   useEffect(() => {
     startPointRef.current = startPoint;
@@ -666,6 +669,7 @@ const CustomAudioPlayer = ({
             ? originalAudio
             : stemAudioRefs.current[activeStem];
 
+        announceGlobalPlayback();
         if (activeAudio) await activeAudio.play();
         if (videoRef.current) {
           try {
@@ -1183,6 +1187,14 @@ const CustomAudioPlayer = ({
     }
   }, []);
 
+  const announceGlobalPlayback = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent('global-audio-play', {
+        detail: { sourceId: playbackInstanceIdRef.current },
+      })
+    );
+  }, []);
+
   const stopAllPlayback = useCallback(() => {
     clearSlicePlaybackTimeout();
     const originalAudio = originalAudioRef.current;
@@ -1193,6 +1205,17 @@ const CustomAudioPlayer = ({
     if (videoRef.current) videoRef.current.pause();
     setIsPlaying(false);
   }, [clearSlicePlaybackTimeout]);
+
+  useEffect(() => {
+    const handleExternalPlayback = (event) => {
+      const sourceId = event?.detail?.sourceId;
+      if (!sourceId || sourceId === playbackInstanceIdRef.current) return;
+      stopAllPlayback();
+    };
+    window.addEventListener('global-audio-play', handleExternalPlayback);
+    return () =>
+      window.removeEventListener('global-audio-play', handleExternalPlayback);
+  }, [stopAllPlayback]);
 
   const fetchBeatAnalysis = useCallback(
     async (force = false) => {
@@ -1261,6 +1284,7 @@ const CustomAudioPlayer = ({
       if (!activeAudio) return;
 
       try {
+        announceGlobalPlayback();
         await activeAudio.play();
         if (videoRef.current) {
           try {
@@ -1294,7 +1318,12 @@ const CustomAudioPlayer = ({
       };
       scheduleStop();
     },
-    [clearSlicePlaybackTimeout, stopAllPlayback, syncAudioElements]
+    [
+      announceGlobalPlayback,
+      clearSlicePlaybackTimeout,
+      stopAllPlayback,
+      syncAudioElements,
+    ]
   );
 
   const jumpToSlice = useCallback(
@@ -1320,6 +1349,7 @@ const CustomAudioPlayer = ({
         slice: selectedSlice,
         sliceSize,
         analysisStem,
+        selectedStem: activeStemRef.current || 'original',
       });
       if (result?.alreadyExists) {
         setFavoriteMessage('already in favorites');
@@ -1551,19 +1581,20 @@ const CustomAudioPlayer = ({
           </button>
         )}
 
-        {onFavoriteSlice && selectedSlice && sourceAudioFilename && (
-          <button
-            className="favorite-slice-btn"
-            onClick={handleFavoriteSelectedSlice}
-            title="save selected slice to favorites"
-            disabled={favoritingSlice}
-          >
-            {favoritingSlice ? '...' : '★'}
-          </button>
-        )}
       </div>
 
       {favoriteMessage && <div className="favorite-slice-message">{favoriteMessage}</div>}
+
+      {showSliceLab && onFavoriteSlice && selectedSlice && sourceAudioFilename && (
+        <button
+          className="slice-favorite-fab"
+          onClick={handleFavoriteSelectedSlice}
+          title="save selected slice to favorites"
+          disabled={favoritingSlice}
+        >
+          {favoritingSlice ? 'Saving...' : '★ Favorite'}
+        </button>
+      )}
 
       {showSliceLab && (
       <div className="slice-lab">

@@ -367,21 +367,24 @@ async function downloadStem(assetId, outputPath) {
 async function clipAudioSegment(inputPath, outputPath, startSec, endSec) {
   const start = Math.max(0, Number(startSec) || 0);
   const end = Math.max(start + 0.05, Number(endSec) || start + 0.05);
+  const duration = end - start;
 
   await new Promise((resolve, reject) => {
+    const outputExt = path.extname(outputPath).toLowerCase();
+    const codecArgs =
+      outputExt === '.wav'
+        ? ['-acodec', 'pcm_s16le']
+        : ['-acodec', 'mp3', '-ab', '192k'];
     const ff = spawn('ffmpeg', [
       '-y',
-      '-ss',
-      start.toFixed(6),
-      '-to',
-      end.toFixed(6),
       '-i',
       inputPath,
+      '-ss',
+      start.toFixed(6),
+      '-t',
+      duration.toFixed(6),
       '-vn',
-      '-acodec',
-      'mp3',
-      '-ab',
-      '192k',
+      ...codecArgs,
       '-ar',
       '44100',
       outputPath,
@@ -401,11 +404,14 @@ function getFavoriteAudioEntries(favoriteId, favoriteFolderPath) {
 
   const files = fs.readdirSync(favoriteFolderPath);
   for (const file of files) {
-    if (!file.endsWith('.mp3')) continue;
+    if (!/\.(mp3|wav)$/i.test(file)) continue;
     const stemType = path.parse(file).name;
+    const ext = path.extname(file).toLowerCase();
+    const contentType = ext === '.wav' ? 'audio/wav' : 'audio/mpeg';
     entries.push({
       type: stemType,
       filename: file,
+      contentType,
       streamUrl: `/api/favorite-file/${favoriteId}/${file}`,
       downloadUrl: `/api/favorite-download/${favoriteId}/${file}`,
     });
@@ -1486,6 +1492,7 @@ fastify.post('/api/favorites/add-slice', async (request, reply) => {
     slice,
     sliceSize = null,
     analysisStem = null,
+    selectedStem = 'original',
     sourceTitle = null,
   } = request.body || {};
 
@@ -1563,7 +1570,7 @@ fastify.post('/api/favorites/add-slice', async (request, reply) => {
     for (const sourceEntry of sourceEntries) {
       const inputPath = path.join(songFolderPath, sourceEntry.filename);
       if (!fs.existsSync(inputPath)) continue;
-      const outputFilename = `${sourceEntry.type}.mp3`;
+      const outputFilename = `${sourceEntry.type}.wav`;
       const outputPath = path.join(favoriteFolderPath, outputFilename);
       await clipAudioSegment(inputPath, outputPath, startSec, endSec);
       clippedEntries.push({
@@ -1593,6 +1600,7 @@ fastify.post('/api/favorites/add-slice', async (request, reply) => {
         duration: endSec - startSec,
         sliceSize,
         analysisStem,
+        selectedStem,
       },
       availableTypes: clippedEntries.map((entry) => entry.type),
     };
@@ -1673,7 +1681,8 @@ fastify.get('/api/favorite-file/:favoriteId/:filename', async (request, reply) =
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = request.headers.range;
-  const contentType = 'audio/mpeg';
+  const ext = path.extname(filename).toLowerCase();
+  const contentType = ext === '.wav' ? 'audio/wav' : 'audio/mpeg';
 
   if (range) {
     const parts = range.replace(/bytes=/, '').split('-');
@@ -1706,9 +1715,11 @@ fastify.get('/api/favorite-download/:favoriteId/:filename', async (request, repl
     return reply.code(404).send({ error: 'File not found' });
   }
 
+  const ext = path.extname(filename).toLowerCase();
+  const contentType = ext === '.wav' ? 'audio/wav' : 'audio/mpeg';
   reply.headers({
     'Content-Disposition': `attachment; filename="${filename}"`,
-    'Content-Type': 'audio/mpeg',
+    'Content-Type': contentType,
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET',
     'Access-Control-Allow-Headers': 'Content-Type',
